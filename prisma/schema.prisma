@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN              // Super Admin = WR Boss
+  MANAGER            // Lab Head
+  INVENTORY_MANAGER  // Stock Keeper (Inventory)
+  TECHNICIAN         // Lab Assistants
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  INACTIVE
+}
+
+model User {
+  id                 String     @id @default(uuid())
+  name               String
+  email              String     @unique
+  username           String?    @unique
+  password           String
+  role               Role       @default(TECHNICIAN)
+  status             UserStatus @default(PENDING)
+  mustChangePassword Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+}
+
+model TestRecord {
+  id         String    @id @default(uuid())
+  sampleId   String    // Auto-generated unique combined sample ID (e.g., SMP-DT-BT-2026-11-12-482)
+  typeId     String?   // Links to TestType (Tank / Unit)
+  type       TestType? @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  parameter  String    // e.g., pH, Turbidity, COD, BOD
+  value      Float
+  unit       String    // e.g., mg/L, NTU
+  status     String    // Normal, Warning, Critical
+  testedBy   String
+  verifiedBy String?
+  isVerified Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model InventoryItem {
+  id        String   @id @default(uuid())
+  name      String
+  category  String   // Chemical, Glassware, Equipment
+  quantity  Float
+  unit      String   // L, Kg, pcs
+  threshold Float    // Minimum stock alert level
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BreakageLog {
+  id         String   @id @default(uuid())
+  itemName   String
+  quantity   Int
+  reportedBy String
+  status     String   // Pending, Resolved
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ChemicalRecipe {
+  id             String   @id @default(uuid())
+  chemicalName   String
+  requiredAmount Float
+  unit           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// 1. Global Test Parameters Master (Test Management - Name & Unit)
+model TestParameter {
+  id        String   @id @default(uuid())
+  name      String   @unique // e.g. "pH", "COD", "Ammonia"
+  unit      String?  // e.g. mg/L, pH, NTU, drops
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 2. Chemical Master Catalog & Stock Inventory
+model ChemicalMaster {
+  id          String                    @id @default(uuid())
+  name        String                    @unique // e.g. "Aluminum Sulfate (Alum)"
+  quantity    Float                     @default(0) // Current stock amount
+  unit        String                    // Stock unit e.g. kg, Liters, mL
+  threshold   Float                     @default(10) // Low stock alert level
+  description String?
+  dosages     ParameterChemicalDosage[] // Relation to chemical dosages
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+}
+
+// 3. Category Table (e.g. "Daily Testing", "Weekly Testing")
+model TestCategory {
+  id          String       @id @default(uuid())
+  name        String       @unique // e.g. "Daily Testing"
+  code        String?      @unique // Unique code derived from category name (e.g. "DT")
+  description String?      
+  types       TestType[]   
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+// 4. Type / Unit Table linked to Category (e.g. "Balance Tank", "Raw Water Line")
+model TestType {
+  id          String                    @id @default(uuid())
+  categoryId  String
+  category    TestCategory              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  name        String                    // e.g. "Balance Tank"
+  code        String?                   @unique // Unique code derived from unit name (e.g. "BT")
+  description String?                   
+  ranges      TankParameterConfig[]     
+  dosages     ParameterChemicalDosage[] // Relation to chemical dosages
+  records     TestRecord[]              // Relation to test records
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@unique([categoryId, name])
+}
+
+// 5. Tank/Unit-wise Parameter Ranges & Standards
+model TankParameterConfig {
+  id            String       @id @default(uuid())
+  typeId        String       // Links to TestType (e.g. Balancing Tank, Disinfection Tank)
+  type          TestType     @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  
+  parameterName String       // e.g. "pH", "BOD", "COD"
+  unit          String?      // e.g. "mg/L", "pH"
+  standardMin   Float?       // e.g. 6.5
+  standardMax   Float?       // e.g. 8.0
+  rangeText     String?      // For inequality rules like "< 30" or microorganism names
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([typeId, parameterName])
+}
+
+// 6. Unit & Parameter-wise Chemical Dosage Configurations
+model ParameterChemicalDosage {
+  id            String         @id @default(uuid())
+  typeId        String         // Links to TestType (Unit / Tank / Process Stage)
+  type          TestType       @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  
+  parameterName String         // e.g. "pH", "Turbidity", "COD"
+  
+  chemicalId    String         // Links to ChemicalMaster Catalog
+  chemical      ChemicalMaster @relation(fields: [chemicalId], references: [id], onDelete: Cascade)
+  
+  amount        Float          // Required dosage amount e.g. 25.5
+  unit          String         // e.g. "kg", "L", "g"
+  description   String?        // Optional notes
+  
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([typeId, parameterName, chemicalId])
+}
