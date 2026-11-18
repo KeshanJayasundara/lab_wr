@@ -51,8 +51,8 @@ function splitSample(raw: string) {
   return { base: base || normName(raw), idx };
 }
 
-type RowSpec = { row: number; keys: string[]; idx?: 1 | 2 };
-type Block = { loc: RegExp; timeRow?: number; rows: RowSpec[] };
+export type RowSpec = { row: number; keys: string[]; idx?: 1 | 2 };
+export type Block = { loc: RegExp; timeRow?: number; rows: RowSpec[] };
 
 const BALANCE_DISINFECT_COMMON = (start: number): RowSpec[] => [
   { row: start + 1, keys: ["temprature", "temperature", "temp"] },
@@ -65,7 +65,7 @@ const BALANCE_DISINFECT_COMMON = (start: number): RowSpec[] => [
   { row: start + 8, keys: ["ec", "conductivity", "electricalconductivity"] },
 ];
 
-const BLOCKS: Block[] = [
+export const BLOCKS: Block[] = [
   {
     loc: /balanc/i,
     timeRow: 4,
@@ -123,8 +123,8 @@ const BLOCKS: Block[] = [
     ],
   },
 ];
-const SLUDGE_ROW = 61;
-const FLOW_ROW = 63;
+export const SLUDGE_ROW = 61;
+export const FLOW_ROW = 63;
 
 // Daily efficiency rows: (balancing row - disinfection row) / balancing row * 100  (same formula as the template)
 const EFFICIENCY: { row: number; inRow: number; outRow: number }[] = [
@@ -135,7 +135,7 @@ const EFFICIENCY: { row: number; inRow: number; outRow: number }[] = [
   { row: 69, inRow: 13, outRow: 37 },
 ];
 
-function findRow(rec: ReportRecord): number | null {
+export function findRow(rec: ReportRecord): number | null {
   const tankName = `${rec.type?.name ?? ""}`;
   const full = normName(rec.parameter);
   const { base, idx } = splitSample(rec.parameter);

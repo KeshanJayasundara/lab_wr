@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -16,11 +16,11 @@ import {
   FolderTree, 
   LogOut, 
   Sliders,
+  Upload,
   X, 
   Menu, 
   Bell 
 } from "lucide-react";
-import ProfileModal, { ManagerProfile } from "@/components/manager/ProfileModal";
 
 export default function ManagerLayout({
   children,
@@ -29,40 +29,13 @@ export default function ManagerLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
-  const [profileOpen, setProfileOpen] = useState(false);
-  // Logged-in user's real name + email (from the database)
-  const [profile, setProfile] = useState<ManagerProfile | null>(null);
-
-  useEffect(() => {
-    const loadProfile = () => {
-      fetch("/api/manager/profile", { cache: "no-store" })
-        .then((res) => res.json())
-        .then((json) => {
-          if (json.success) setProfile({ name: json.data.name, email: json.data.email });
-        })
-        .catch(() => {});
-    };
-
-    loadProfile();
-    // Re-sync whenever the user comes back to this tab/window
-    window.addEventListener("focus", loadProfile);
-    return () => window.removeEventListener("focus", loadProfile);
-  }, []);
-
-  const initials = profile
-    ? profile.name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((w) => w[0]?.toUpperCase())
-        .join("") || "MG"
-    : "";
 
   // Updated Lab Manager Navigation Items including Parameter Dosages
   const navItems = [
     { name: "Dashboard", href: "/dashboard/manager", icon: LayoutDashboard },
     { name: "Test Verification Queue", href: "/dashboard/manager/verify", icon: CheckSquare },
     { name: "Reports & Exports", href: "/dashboard/manager/reports", icon: FileSpreadsheet },
+    { name: "Import Past Data", href: "/dashboard/manager/import", icon: Upload },
     { name: "Analytics & Trends", href: "/dashboard/manager/analytics", icon: BarChart3 },
     { name: "Chemical Catalog", href: "/dashboard/manager/chemicals", icon: FlaskConical },
     { name: "Test Categories & Units", href: "/dashboard/manager/categories", icon: FolderTree },
@@ -182,29 +155,15 @@ export default function ManagerLayout({
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-600 rounded-full ring-2 ring-white/70"></span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setProfileOpen(true)}
-              title="Edit profile"
-              className="flex items-center gap-3 pl-3 border-l border-white/60 cursor-pointer rounded-xl py-1 pr-2 transition-all hover:bg-white/60"
-            >
+            <div className="flex items-center gap-3 pl-3 border-l border-white/60">
               <div className="w-9 h-9 bg-gradient-to-br from-sky-400 to-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-md shadow-blue-500/30 ring-1 ring-inset ring-white/40">
-                {initials}
+                MG
               </div>
               <div className="hidden sm:block text-left">
-                {profile ? (
-                  <>
-                    <p className="text-xs font-bold text-slate-800">{profile.name}</p>
-                    <p className="text-[10px] text-slate-600">{profile.email}</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-3 w-28 rounded bg-white/60 animate-pulse" />
-                    <div className="mt-1.5 h-2.5 w-36 rounded bg-white/50 animate-pulse" />
-                  </>
-                )}
+                <p className="text-xs font-bold text-slate-800">Lab Manager / Chemist</p>
+                <p className="text-[10px] text-slate-600">manager@waterboard.lk</p>
               </div>
-            </button>
+            </div>
           </div>
         </header>
 
@@ -212,15 +171,6 @@ export default function ManagerLayout({
           {children}
         </main>
       </div>
-
-      {profile && (
-        <ProfileModal
-          open={profileOpen}
-          profile={profile}
-          onClose={() => setProfileOpen(false)}
-          onUpdated={setProfile}
-        />
-      )}
     </div>
   );
 }
