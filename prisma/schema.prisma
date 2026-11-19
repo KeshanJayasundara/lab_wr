@@ -173,3 +173,16 @@ model ParameterChemicalDosage {
 
   @@unique([typeId, parameterName, chemicalId])
 }
+// ---- Add this at the END of prisma/schema.prisma ----
+
+model FacilityProfile {
+  id             String   @id @default("singleton")
+  region         String
+  departmentName String
+  departmentHead String
+  officialEmail  String
+  officialPhone  String
+  regionAddress  String
+  privateContact String
+  updatedAt      DateTime @updatedAt
+}
