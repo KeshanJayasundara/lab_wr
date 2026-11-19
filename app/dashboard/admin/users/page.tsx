@@ -51,6 +51,16 @@ const generateConfirmCode = () => {
   return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8, 12)].map((g) => g.join("")).join("-");
 };
 
+// Keeps only letters/digits, upper-cases them and puts "-" after every 4 characters automatically.
+// While typing, the dash appears right after the 4th / 8th character; while deleting it does not come back.
+const formatConfirmInput = (value: string, isDeleting: boolean) => {
+  const raw = value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12);
+  const groups = raw.match(/.{1,4}/g) || [];
+  let out = groups.join("-");
+  if (!isDeleting && raw.length > 0 && raw.length < 12 && raw.length % 4 === 0) out += "-";
+  return out;
+};
+
 /* ---------------------------------- Select --------------------------------- */
 
 function GlassSelect({
@@ -818,9 +828,10 @@ export default function AdminUsersPage() {
               <input
                 type="text"
                 value={confirmInput}
-                onChange={(e) => setConfirmInput(e.target.value.toUpperCase())}
+                onChange={(e) => setConfirmInput(formatConfirmInput(e.target.value, e.target.value.length < confirmInput.length))}
                 onPaste={(e) => e.preventDefault()}
                 onDrop={(e) => e.preventDefault()}
+                maxLength={14}
                 autoComplete="off"
                 autoCapitalize="characters"
                 autoCorrect="off"
@@ -837,7 +848,7 @@ export default function AdminUsersPage() {
                 }`}
               />
               <p className="text-[11px] text-slate-500 text-center">
-                Pasting is disabled. A new code is generated every time.
+                Just type the 12 characters - the dashes are added automatically. Pasting is disabled and a new code is generated every time.
               </p>
             </div>
 
