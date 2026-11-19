@@ -27,7 +27,24 @@ async function verifyManager(request: Request) {
   }
 }
 
-// GET: current manager's profile (name + email)
+// Removes the login cookie (used when the account was deleted / deactivated by the admin)
+function clearedSessionResponse(code: "ACCOUNT_DELETED" | "ACCOUNT_DEACTIVATED", error: string, status: number) {
+  const response = NextResponse.json({ success: false, code, error }, { status });
+  response.headers.set(
+    "Set-Cookie",
+    serialize("token", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 0,
+      path: "/",
+    })
+  );
+  return response;
+}
+
+// GET: current user's profile (name + email) - also doubles as the "is my account still valid?" check
+
 export async function GET(request: Request) {
   const session = await verifyManager(request);
   if (!session) {
@@ -37,12 +54,18 @@ export async function GET(request: Request) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, status: true },
     });
     if (!user) {
-      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+      return clearedSessionResponse("ACCOUNT_DELETED", "Your account no longer exists.", 401);
     }
-    return NextResponse.json({ success: true, data: user }, { status: 200 });
+    if (user.status !== "ACTIVE") {
+      return clearedSessionResponse("ACCOUNT_DEACTIVATED", "Your account has been deactivated.", 403);
+    }
+    return NextResponse.json(
+      { success: true, data: { id: user.id, name: user.name, email: user.email } },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("PROFILE GET ERROR:", error);
     return NextResponse.json({ success: false, error: "Failed to load profile" }, { status: 500 });
@@ -84,7 +107,10 @@ export async function PUT(request: Request) {
 
     const user = await prisma.user.findUnique({ where: { id: session.userId } });
     if (!user) {
-      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+      return clearedSessionResponse("ACCOUNT_DELETED", "Your account no longer exists.", 401);
+    }
+    if (user.status !== "ACTIVE") {
+      return clearedSessionResponse("ACCOUNT_DEACTIVATED", "Your account has been deactivated.", 403);
     }
 
     const passwordOk = await bcrypt.compare(currentPassword, user.password);

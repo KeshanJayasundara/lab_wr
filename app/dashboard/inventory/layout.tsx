@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -13,6 +13,29 @@ export default function InventoryLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+
+  // Sign out automatically if the admin deactivates / deletes this account
+  useEffect(() => {
+    const checkAccount = async () => {
+      try {
+        const res = await fetch("/api/manager/profile", { cache: "no-store", credentials: "same-origin" });
+        if (res.status === 401 || res.status === 403) {
+          const json = await res.json().catch(() => ({}));
+          window.location.replace(`/login?reason=${json?.code || "session"}`);
+        }
+      } catch {
+        // network hiccup - try again on the next tick
+      }
+    };
+
+    checkAccount();
+    const timer = setInterval(checkAccount, 5000);
+    window.addEventListener("focus", checkAccount);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", checkAccount);
+    };
+  }, []);
 
   // Inventory Manager Navigation Items
   const navItems = [

@@ -34,13 +34,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid email/username or password" }, { status: 401 });
     }
 
-    if (user.status !== "ACTIVE") {
-      return NextResponse.json({ success: false, error: "Account is pending approval or inactive" }, { status: 403 });
-    }
-
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return NextResponse.json({ success: false, error: "Invalid email/username or password" }, { status: 401 });
+    }
+
+    // Checked after the password so only the real account owner sees these messages
+    if (user.status === "INACTIVE") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Your account has been deactivated by the administrator. Please contact the admin to get it reactivated.",
+        },
+        { status: 403 }
+      );
+    }
+    if (user.status !== "ACTIVE") {
+      return NextResponse.json(
+        { success: false, error: "Your account is pending approval by the administrator." },
+        { status: 403 }
+      );
     }
 
     // Generate JWT Token including mustChangePassword flag

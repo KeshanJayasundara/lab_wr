@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,18 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Message shown when the user was signed out automatically (/login?reason=...)
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get("reason");
+    if (reason === "ACCOUNT_DEACTIVATED") {
+      setError("Your account has been deactivated by the administrator, so you have been signed out. Please contact the admin to get it reactivated.");
+    } else if (reason === "ACCOUNT_DELETED") {
+      setError("Your account has been removed by the administrator, so you have been signed out.");
+    } else if (reason === "session") {
+      setError("Your session has ended. Please sign in again.");
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
