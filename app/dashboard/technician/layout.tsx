@@ -24,6 +24,11 @@ export default function TechnicianLayout({
       try {
         const res = await fetch("/api/manager/profile", { cache: "no-store", credentials: "same-origin" });
         const json = await res.json();
+        // Account deleted / deactivated by the admin (or session gone) -> sign out automatically
+        if (res.status === 401 || res.status === 403) {
+          window.location.replace(`/login?reason=${json?.code || "session"}`);
+          return;
+        }
         if (res.ok && json.success) {
           setProfile({ name: json.data.name, email: json.data.email });
           setProfileError("");
@@ -38,9 +43,13 @@ export default function TechnicianLayout({
     };
 
     loadProfile();
-    // Re-sync whenever the user comes back to this tab/window
+        // Check the account every 5 seconds (and when the tab regains focus)
+    const timer = setInterval(loadProfile, 5000);
     window.addEventListener("focus", loadProfile);
-    return () => window.removeEventListener("focus", loadProfile);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", loadProfile);
+    };
   }, []);
 
   const initials = profile

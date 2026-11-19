@@ -13,6 +13,8 @@ import {
   ChevronDown,
   Check,
   Loader2,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -37,6 +39,17 @@ const initials = (name: string) =>
     .join("")
     .substring(0, 2)
     .toUpperCase();
+
+/* ------------------------- Delete confirmation code ------------------------- */
+
+// Random code like "K7QM-X4R9-T2WB" (no look-alike characters such as O/0 or I/1)
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const generateConfirmCode = () => {
+  const bytes = new Uint32Array(12);
+  window.crypto.getRandomValues(bytes);
+  const chars = Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]);
+  return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8, 12)].map((g) => g.join("")).join("-");
+};
 
 /* ---------------------------------- Select --------------------------------- */
 
@@ -173,6 +186,10 @@ export default function AdminUsersPage() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmCode, setConfirmCode] = useState("");
+  const [confirmInput, setConfirmInput] = useState("");
 
   // Form state
   const [newUserName, setNewUserName] = useState("");
@@ -221,6 +238,22 @@ export default function AdminUsersPage() {
     };
   }, [isModalOpen]);
 
+  useEffect(() => {
+    if (deleteTarget) {
+      setConfirmCode(generateConfirmCode());
+      setConfirmInput("");
+    }
+  }, [deleteTarget]);
+
+  useEffect(() => {
+    if (!deleteTarget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !deleting) setDeleteTarget(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [deleteTarget, deleting]);
+
   const superAdminExists = usersList.some((u) => u.role === "ADMIN");
 
   const roleOptions: Option[] = [
@@ -231,13 +264,16 @@ export default function AdminUsersPage() {
   ];
 
   const q = searchTerm.toLowerCase();
-  const filteredUsers = usersList.filter(
-    (user) =>
-      (user.name ?? "").toLowerCase().includes(q) ||
-      (user.email ?? "").toLowerCase().includes(q) ||
-      (user.username ?? "").toLowerCase().includes(q) ||
-      (user.role ?? "").toLowerCase().includes(q)
-  );
+  const filteredUsers = usersList
+    .filter(
+      (user) =>
+        (user.name ?? "").toLowerCase().includes(q) ||
+        (user.email ?? "").toLowerCase().includes(q) ||
+        (user.username ?? "").toLowerCase().includes(q) ||
+        (user.role ?? "").toLowerCase().includes(q)
+    )
+    // Super Admin is always pinned to the top (sort is stable, so the rest keep their order)
+    .sort((a, b) => Number(b.role === "ADMIN") - Number(a.role === "ADMIN"));
 
   const resetForm = () => {
     setNewUserName("");
@@ -304,8 +340,33 @@ export default function AdminUsersPage() {
     }
   };
 
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (!confirmCode || confirmInput.trim().toUpperCase() !== confirmCode) return;
+    setDeleting(true);
+    setError("");
+    setSuccessMsg("");
+    try {
+      const res = await fetch("/api/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: deleteTarget.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete user");
+      setSuccessMsg(`User "${deleteTarget.name}" was deleted permanently.`);
+      setDeleteTarget(null);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message);
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const renderToggleButton = (
-    user: { id: string; role: string; status: string },
+    user: { id: string; role: string; status: string; name?: string; email?: string },
     fullWidth: boolean
   ) => {
     // 🔒 Lock out Super Admin from deactivation
@@ -324,12 +385,12 @@ export default function AdminUsersPage() {
     const active = isActive(user.status);
     const busy = togglingId === user.id;
 
-    return (
+    const toggleButton = (
       <button
         onClick={() => toggleUserStatus(user.id, user.status)}
         disabled={busy}
         className={`font-semibold rounded-full border backdrop-blur-xl shadow-sm transition-all active:scale-[0.98] sm:hover:-translate-y-0.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 ${
-          fullWidth ? "w-full min-h-[44px] px-3.5 py-2.5 text-sm" : "px-3.5 py-1.5 text-xs"
+          fullWidth ? "flex-1 min-h-[44px] px-3.5 py-2.5 text-sm" : "px-3.5 py-1.5 text-xs"
         } ${
           active
             ? "text-red-600 hover:text-red-700 bg-red-400/10 hover:bg-red-400/20 border-red-300/60"
@@ -339,6 +400,27 @@ export default function AdminUsersPage() {
         {busy && <Loader2 className="animate-spin h-4 w-4" />}
         {active ? "Deactivate" : "Activate"}
       </button>
+    );
+
+    const deleteButton = (
+      <button
+        onClick={() => setDeleteTarget({ id: user.id, name: (user as any).name, email: (user as any).email })}
+        disabled={busy}
+        aria-label="Delete user"
+        className={`font-semibold rounded-full border backdrop-blur-xl shadow-sm transition-all active:scale-[0.98] sm:hover:-translate-y-0.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 text-white bg-red-500 hover:bg-red-600 border-red-500 ${
+          fullWidth ? "flex-1 min-h-[44px] px-3.5 py-2.5 text-sm" : "px-3.5 py-1.5 text-xs"
+        }`}
+      >
+        <Trash2 size={fullWidth ? 16 : 14} />
+        Delete
+      </button>
+    );
+
+    return (
+      <div className={fullWidth ? "flex gap-2" : "inline-flex items-center gap-2"}>
+        {toggleButton}
+        {deleteButton}
+      </div>
     );
   };
 
@@ -442,7 +524,11 @@ export default function AdminUsersPage() {
               <div
                 key={user.id}
                 className={`${glass} p-4 space-y-3 rounded-2xl border-l-4 min-w-0 ${
-                  isActive(user.status) ? "border-l-emerald-400" : "border-l-red-400"
+                  user.role === "ADMIN"
+                    ? "border-l-purple-500 !bg-purple-400/15 ring-purple-300/60"
+                    : isActive(user.status)
+                    ? "border-l-emerald-400"
+                    : "border-l-red-400"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -451,7 +537,14 @@ export default function AdminUsersPage() {
                       {initials(user.name)}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">{user.name}</p>
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {user.name}
+                        {user.role === "ADMIN" && (
+                          <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-purple-700 bg-purple-400/20 border border-purple-300/50 px-1.5 py-0.5 rounded-full">
+                            You
+                          </span>
+                        )}
+                      </p>
                       {user.username && (
                         <p className="text-xs text-slate-500 truncate">@{user.username}</p>
                       )}
@@ -489,14 +582,28 @@ export default function AdminUsersPage() {
                 </thead>
                 <tbody className="divide-y divide-white/50 text-sm">
                   {filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-white/55 transition-all">
+                    <tr
+                      key={user.id}
+                      className={`transition-all ${
+                        user.role === "ADMIN"
+                          ? "bg-purple-400/15 hover:bg-purple-400/20 shadow-[inset_4px_0_0_0_rgba(168,85,247,0.8)]"
+                          : "hover:bg-white/55"
+                      }`}
+                    >
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3 font-semibold text-slate-900 whitespace-nowrap">
                           <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-md">
                             {initials(user.name)}
                           </div>
                           <div>
-                            <div>{user.name}</div>
+                            <div>
+                              {user.name}
+                              {user.role === "ADMIN" && (
+                                <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-purple-700 bg-purple-400/20 border border-purple-300/50 px-1.5 py-0.5 rounded-full">
+                                  You
+                                </span>
+                              )}
+                            </div>
                             {user.username && (
                               <div className="text-xs text-slate-500 font-normal">@{user.username}</div>
                             )}
@@ -662,6 +769,97 @@ export default function AdminUsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deleting) setDeleteTarget(null);
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-user-title"
+            className="bg-white/85 sm:bg-white/75 backdrop-blur-2xl border border-white/70 shadow-2xl rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+          >
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-2xl bg-red-500/15 text-red-600 shrink-0">
+                <AlertTriangle size={22} />
+              </span>
+              <div className="min-w-0">
+                <h3 id="delete-user-title" className="text-base font-semibold text-slate-900">
+                  Delete this user permanently?
+                </h3>
+                <p className="mt-1 text-sm text-slate-700 break-words">
+                  <span className="font-semibold">{deleteTarget.name}</span>
+                  <span className="text-slate-500"> ({deleteTarget.email})</span>
+                </p>
+                <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+                  This removes the account from the database and it cannot be undone. Test records and other data created by
+                  this user are kept.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <p className="text-xs font-semibold text-slate-700">Type this code exactly to confirm:</p>
+              <div
+                aria-label="Confirmation code"
+                onCopy={(e) => e.preventDefault()}
+                className="select-none text-center font-mono text-lg sm:text-xl font-bold tracking-[0.25em] text-red-700 bg-red-500/10 border border-red-300/60 rounded-2xl py-2.5"
+              >
+                {confirmCode}
+              </div>
+              <input
+                type="text"
+                value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value.toUpperCase())}
+                onPaste={(e) => e.preventDefault()}
+                onDrop={(e) => e.preventDefault()}
+                autoComplete="off"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={deleting}
+                placeholder="XXXX-XXXX-XXXX"
+                aria-label="Type the confirmation code"
+                className={`w-full px-3.5 py-2.5 min-h-[44px] rounded-2xl border bg-white/70 text-center font-mono text-base tracking-[0.2em] text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 ${
+                  confirmInput && confirmInput !== confirmCode
+                    ? "border-red-300 focus:ring-red-400/60"
+                    : confirmInput === confirmCode
+                    ? "border-emerald-400 focus:ring-emerald-400/60"
+                    : "border-white/70 focus:ring-blue-500/60"
+                }`}
+              />
+              <p className="text-[11px] text-slate-500 text-center">
+                Pasting is disabled. A new code is generated every time.
+              </p>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="w-full sm:w-auto min-h-[44px] sm:min-h-0 px-4 py-2 rounded-full text-sm font-semibold text-slate-700 border border-white/70 bg-white/60 hover:bg-white/90 cursor-pointer disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting || !confirmCode || confirmInput !== confirmCode}
+                className="w-full sm:w-auto min-h-[44px] sm:min-h-0 px-4 py-2 rounded-full text-sm font-semibold bg-red-500 hover:bg-red-600 text-white shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {deleting ? <Loader2 className="animate-spin h-4 w-4" /> : <Trash2 size={16} />}
+                {deleting ? "Deleting..." : "Yes, delete user"}
+              </button>
+            </div>
           </div>
         </div>
       )}
