@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { CheckSquare, CheckCircle2, Eye, Check, AlertTriangle, User, Loader2, X, AlertCircle, ShieldCheck, Edit3, Trash2, Clock, Lock, ChevronDown, Layers } from "lucide-react";
+import { CheckSquare, CheckCircle2, Eye, Check, AlertTriangle, User, Loader2, X, AlertCircle, ShieldCheck, Edit3, Trash2, Clock, Lock, ChevronDown, Layers, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const glass =
@@ -33,6 +33,8 @@ const modalPanel =
   "w-full sm:max-w-lg max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden overscroll-contain " +
   "rounded-t-3xl sm:rounded-3xl bg-white/75 backdrop-blur-2xl border border-white/70 ring-1 ring-inset ring-white/50 " +
   "shadow-[0_24px_60px_rgba(15,23,42,0.25)] animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200";
+
+const PAGE_SIZE = 5;
 
 const statusClass = (status: string) => {
   if (status === "Critical") return "bg-red-400/20 text-red-700 border-red-400/40";
@@ -135,6 +137,11 @@ export default function ManagerVerifyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [viewingSet, setViewingSet] = useState<SampleGroup | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Search + pagination
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
 
   // Manager Edit modal state (no manual status needed)
   const [editingRecord, setEditingRecord] = useState<PendingTest | null>(null);
@@ -243,7 +250,41 @@ export default function ManagerVerifyPage() {
       return next;
     });
 
-  const unverifiedSets = sets.filter((g) => !g.allVerified);
+  // search across sample id, category, unit, technician, status, date and parameter names
+  const filteredSets = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sets;
+    return sets.filter((g) =>
+      [
+        g.sampleId,
+        g.category,
+        g.unit,
+        g.technician,
+        g.status,
+        g.date, // as displayed on the card
+        g.createdAt.slice(0, 10), // 2026-11-18
+        new Date(g.createdAt).toLocaleDateString("en-GB"), // 18/11/2026
+        new Date(g.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }), // November 18, 2026
+        g.allVerified ? "certified verified" : "pending",
+        ...g.records.map((r) => r.parameter),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [sets, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSets.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pagedSets = filteredSets.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const goToPage = (n: number) => {
+    setPage(Math.min(Math.max(1, n), totalPages));
+    listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const unverifiedSets = filteredSets.filter((g) => !g.allVerified);
   const isSetSelected = (g: SampleGroup) => g.records.filter((r) => !r.isVerified).every((r) => r.selected);
   const allSelected = unverifiedSets.length > 0 && unverifiedSets.every(isSetSelected);
   const selectedCount = unverifiedSets.filter(isSetSelected).length;
@@ -436,9 +477,48 @@ export default function ManagerVerifyPage() {
         </div>
       ) : (
         <>
+          {sets.length > 0 && (
+            <div ref={listTopRef} className={`${glass} rounded-2xl px-3 py-2 scroll-mt-4`}>
+              <div className="relative">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search by sample ID, category, unit, technician, parameter or status..."
+                  aria-label="Search data sets"
+                  className={`${glassInput} pl-10 pr-10`}
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("");
+                      setPage(1);
+                    }}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-slate-500 hover:text-slate-800 hover:bg-white/70 cursor-pointer transition-all"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {sets.length === 0 ? (
             <div className={`${glass} rounded-3xl`}>
               <EmptyState />
+            </div>
+          ) : filteredSets.length === 0 ? (
+            <div className={`${glass} rounded-3xl py-16 px-4 text-center text-slate-500 text-xs`}>
+              <div className="mx-auto mb-3 w-12 h-12 rounded-2xl bg-white/60 text-slate-500 flex items-center justify-center ring-1 ring-inset ring-white/60">
+                <Search size={22} />
+              </div>
+              No data sets match “{search.trim()}”.
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:gap-4">
@@ -457,7 +537,7 @@ export default function ManagerVerifyPage() {
                 </div>
               )}
 
-              {sets.map((g) => {
+              {pagedSets.map((g) => {
                 const isOpen = expanded.has(g.key);
                 const selected = !g.allVerified && isSetSelected(g);
                 const canModifySet = (Date.now() - new Date(g.createdAt).getTime()) / (1000 * 60 * 60) <= 24;
@@ -600,6 +680,36 @@ export default function ManagerVerifyPage() {
                   </div>
                 );
               })}
+
+              {/* Pagination */}
+              <div className={`${glass} rounded-2xl px-4 sm:px-5 py-3 flex items-center justify-between gap-3`}>
+                <span className="text-xs sm:text-sm text-slate-600">
+                  Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredSets.length)} of {filteredSets.length}
+                </span>
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <Button
+                    variant="outline"
+                    aria-label="Previous page"
+                    className={`${btnGlass} h-9 w-9 p-0 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed`}
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage <= 1}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-700 whitespace-nowrap">
+                    Page {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    aria-label="Next page"
+                    className={`${btnGlass} h-9 w-9 p-0 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed`}
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </>

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, CheckCircle2, AlertTriangle, User, Loader2, X, ShieldCheck, Eye, ChevronDown, Layers, FlaskConical, Search } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileText, CheckCircle2, AlertTriangle, User, Loader2, X, ShieldCheck, Eye, ChevronDown, Layers, FlaskConical, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Same "frosted glass" look as the manager Test Verification page
@@ -18,6 +18,8 @@ const modalPanel =
   "w-full sm:max-w-lg max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden overscroll-contain " +
   "rounded-t-3xl sm:rounded-3xl bg-white/75 backdrop-blur-2xl border border-white/70 ring-1 ring-inset ring-white/50 " +
   "shadow-[0_24px_60px_rgba(15,23,42,0.25)] animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200";
+
+const PAGE_SIZE = 5;
 
 const statusClass = (status: string) => {
   if (status === "Critical") return "bg-red-400/20 text-red-700 border-red-400/40";
@@ -79,6 +81,8 @@ export default function AdminTestRecordsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
   const [viewingSet, setViewingSet] = useState<SampleGroup | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -187,15 +191,34 @@ export default function AdminTestRecordsPage() {
   const filteredSets = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return sets;
-    return sets.filter(
-      (g) =>
-        g.sampleId.toLowerCase().includes(q) ||
-        g.category.toLowerCase().includes(q) ||
-        g.unit.toLowerCase().includes(q) ||
-        g.technician.toLowerCase().includes(q) ||
-        g.records.some((r) => r.parameter.toLowerCase().includes(q))
+    return sets.filter((g) =>
+      [
+        g.sampleId,
+        g.category,
+        g.unit,
+        g.technician,
+        g.status,
+        g.date, // as displayed on the card
+        g.createdAt.slice(0, 10), // 2026-11-18
+        new Date(g.createdAt).toLocaleDateString("en-GB"), // 18/11/2026
+        new Date(g.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }), // November 18, 2026
+        ...g.records.map((r) => r.parameter),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
     );
   }, [sets, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSets.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pagedSets = filteredSets.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const goToPage = (n: number) => {
+    setPage(Math.min(Math.max(1, n), totalPages));
+    listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const ChemicalList = ({ items }: { items: string[] }) =>
     items.length === 0 ? null : (
@@ -211,7 +234,7 @@ export default function AdminTestRecordsPage() {
   return (
     <div className="space-y-4 sm:space-y-6 relative">
       {/* Header */}
-      <div className={`${glass} p-4 sm:p-6 rounded-3xl flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4`}>
+      <div ref={listTopRef} className={`${glass} p-4 sm:p-6 rounded-3xl flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 scroll-mt-4`}>
         <div className="min-w-0">
           <h1 className="text-lg sm:text-2xl font-semibold tracking-tight text-slate-900 flex items-start sm:items-center gap-3 leading-tight">
             <span className="p-2 rounded-2xl bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-lg shadow-blue-500/30 ring-1 ring-inset ring-white/40 shrink-0">
@@ -230,9 +253,12 @@ export default function AdminTestRecordsPage() {
           </span>
           <input
             type="text"
-            placeholder="Search sample, unit, technician..."
+            placeholder="Search sample, unit, technician, date..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setPage(1);
+            }}
             className="w-full pl-10 pr-4 py-2 min-h-[44px] sm:min-h-0 rounded-full border border-white/70 bg-white/60 hover:bg-white/80 backdrop-blur-xl text-base sm:text-sm text-slate-800 font-medium placeholder:text-slate-400 shadow-sm transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:bg-white/90"
           />
         </div>
@@ -250,7 +276,7 @@ export default function AdminTestRecordsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:gap-4">
-          {filteredSets.map((g) => {
+          {pagedSets.map((g) => {
             const isOpen = expanded.has(g.key);
             const counts: Record<string, number> = { Normal: 0, Warning: 0, Critical: 0 };
             g.records.forEach((r) => {
@@ -338,6 +364,36 @@ export default function AdminTestRecordsPage() {
               </div>
             );
           })}
+
+          {/* Pagination */}
+          <div className={`${glass} rounded-2xl px-4 sm:px-5 py-3 flex items-center justify-between gap-3`}>
+            <span className="text-xs sm:text-sm text-slate-600">
+              Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredSets.length)} of {filteredSets.length}
+            </span>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Button
+                variant="outline"
+                aria-label="Previous page"
+                className={`${btnGlass} h-9 w-9 p-0 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed`}
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage <= 1}
+              >
+                <ChevronLeft size={16} />
+              </Button>
+              <span className="text-xs sm:text-sm font-semibold text-slate-700 whitespace-nowrap">
+                Page {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                aria-label="Next page"
+                className={`${btnGlass} h-9 w-9 p-0 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed`}
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                <ChevronRight size={16} />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
