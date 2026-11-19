@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Search, CheckCircle2, Clock, XCircle, Filter, Edit3, Lock, X, AlertCircle, Loader2, ChevronDown, ShieldCheck, Layers } from "lucide-react";
+import { FileText, Search, CheckCircle2, Clock, XCircle, Filter, Edit3, Lock, X, AlertCircle, Loader2, ChevronDown, ShieldCheck, Layers, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const glass =
@@ -18,6 +18,8 @@ const modalPanel =
   "w-full sm:max-w-md max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden overscroll-contain " +
   "rounded-t-3xl sm:rounded-3xl bg-white/75 backdrop-blur-2xl border border-white/70 ring-1 ring-inset ring-white/50 " +
   "shadow-[0_24px_60px_rgba(15,23,42,0.25)] animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200";
+
+const PAGE_SIZE = 5;
 
 const statusFilters = ["All", "Normal", "Warning", "Critical", "Verified", "Pending"];
 
@@ -105,6 +107,8 @@ export default function TechnicianHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
 
   const [editingRecord, setEditingRecord] = useState<any | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -234,7 +238,7 @@ export default function TechnicianHistoryPage() {
       return next;
     });
 
-  const q = searchQuery.toLowerCase();
+  const q = searchQuery.trim().toLowerCase();
   const filteredSets = sets.filter((g) => {
     const matchesFilter =
       filterStatus === "All" ||
@@ -243,13 +247,34 @@ export default function TechnicianHistoryPage() {
       (filterStatus === "Pending" && !g.allVerified);
 
     const matchesSearch =
-      g.sampleId.toLowerCase().includes(q) ||
-      g.category.toLowerCase().includes(q) ||
-      g.unit.toLowerCase().includes(q) ||
-      g.records.some((r) => r.parameter.toLowerCase().includes(q));
+      !q ||
+      [
+        g.sampleId,
+        g.category,
+        g.unit,
+        g.status,
+        new Date(g.createdAt).toLocaleString(), // as displayed on the card
+        g.createdAt.slice(0, 10), // 2026-11-18
+        new Date(g.createdAt).toLocaleDateString("en-GB"), // 18/11/2026
+        new Date(g.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }), // November 18, 2026
+        ...g.records.map((r) => r.parameter),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
 
     return matchesFilter && matchesSearch;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredSets.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pagedSets = filteredSets.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const goToPage = (n: number) => {
+    setPage(Math.min(Math.max(1, n), totalPages));
+    listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6 relative">
@@ -267,7 +292,7 @@ export default function TechnicianHistoryPage() {
         </div>
       </div>
 
-      <div className={`${glass} p-3 sm:p-4 rounded-3xl flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 sm:gap-4`}>
+      <div ref={listTopRef} className={`${glass} p-3 sm:p-4 rounded-3xl flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 sm:gap-4 scroll-mt-4`}>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
           <div className="flex items-center gap-2 shrink-0">
             <Filter size={16} className="text-blue-600 flex-shrink-0" />
@@ -277,7 +302,10 @@ export default function TechnicianHistoryPage() {
             {statusFilters.map((status) => (
               <button
                 key={status}
-                onClick={() => setFilterStatus(status)}
+                onClick={() => {
+                  setFilterStatus(status);
+                  setPage(1);
+                }}
                 className={`px-3.5 py-2 sm:py-1 min-h-[40px] sm:min-h-0 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer hover:-translate-y-0.5 ${
                   filterStatus === status
                     ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-500/30 ring-1 ring-inset ring-white/30"
@@ -294,9 +322,12 @@ export default function TechnicianHistoryPage() {
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-blue-600" />
           <input
             type="text"
-            placeholder="Search Sample ID, Tank, Parameter..."
+            placeholder="Search Sample ID, Tank, Parameter, Date..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             className="w-full pl-10 pr-4 py-2 min-h-[44px] sm:min-h-0 rounded-full border border-white/70 bg-white/60 hover:bg-white/80 backdrop-blur-xl text-base sm:text-xs text-slate-800 font-medium placeholder:text-slate-400 shadow-sm transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:bg-white/90"
           />
         </div>
@@ -308,7 +339,7 @@ export default function TechnicianHistoryPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:gap-4">
-          {filteredSets.map((g) => {
+          {pagedSets.map((g) => {
             const isOpen = expanded.has(g.key);
             const counts = { Normal: 0, Warning: 0, Critical: 0 } as Record<string, number>;
             g.records.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
@@ -384,6 +415,38 @@ export default function TechnicianHistoryPage() {
           {filteredSets.length === 0 && (
             <div className={`${glass} py-12 px-4 rounded-2xl text-center text-slate-500 text-xs`}>
               No test records found matching your filters.
+            </div>
+          )}
+
+          {/* Pagination */}
+          {filteredSets.length > 0 && (
+            <div className={`${glass} rounded-2xl px-4 sm:px-5 py-3 flex items-center justify-between gap-3`}>
+              <span className="text-xs sm:text-sm text-slate-600">
+                Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredSets.length)} of {filteredSets.length}
+              </span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <Button
+                  variant="outline"
+                  aria-label="Previous page"
+                  className="text-slate-700 border-white/70 bg-white/40 hover:bg-white/80 backdrop-blur-xl rounded-full cursor-pointer shadow-sm transition-all hover:-translate-y-0.5 h-9 w-9 p-0 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                >
+                  <ChevronLeft size={16} />
+                </Button>
+                <span className="text-xs sm:text-sm font-semibold text-slate-700 whitespace-nowrap">
+                  Page {currentPage} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  aria-label="Next page"
+                  className="text-slate-700 border-white/70 bg-white/40 hover:bg-white/80 backdrop-blur-xl rounded-full cursor-pointer shadow-sm transition-all hover:-translate-y-0.5 h-9 w-9 p-0 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                >
+                  <ChevronRight size={16} />
+                </Button>
+              </div>
             </div>
           )}
         </div>
