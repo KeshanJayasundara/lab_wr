@@ -7,15 +7,35 @@ type ChartPoint = {
   time: string;
   sub?: string;
   fullLabel?: string;
-  y1: number;
-  y2: number;
+  y1: number | null; // null = no reading in this period (gap in the line)
+  y2: number | null;
+  y1Min?: number | null;
+  y1Max?: number | null;
+  y1Count?: number;
+  y2Min?: number | null;
+  y2Max?: number | null;
+  y2Count?: number;
   status: string;
 };
 
-type AxisConfig = { auto: boolean; maxText: string; stepText: string };
+type SeriesMeta = {
+  typeId: string;
+  parameter: string;
+  unit: string | null;
+  standardMin: number | null;
+  standardMax: number | null;
+  totalReadings: number;
+};
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const formatLimits = (min: number | null, max: number | null, unit: string | null) => {
+  const u = unit ? ` ${unit}` : "";
+  if (min !== null && max !== null) return `${min} - ${max}${u}`;
+  if (max !== null) return `\u2264 ${max}${u}`;
+  if (min !== null) return `\u2265 ${min}${u}`;
+  return "";
+};
+
+type AxisConfig = { auto: boolean; minText: string; maxText: string; stepText: string };
 
 const glass =
   "bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(15,23,42,0.10)] ring-1 ring-inset ring-white/40";
@@ -25,7 +45,23 @@ const glassFieldBase =
   "transition-all duration-300 ease-out hover:bg-white/85 hover:border-blue-300 " +
   "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:bg-white/90";
 
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; disabled?: boolean };
+
+// Shape returned by GET /api/manager/analytics/options
+type OptionParam = {
+  name: string;
+  unit: string | null;
+  standardMin: number | null;
+  standardMax: number | null;
+  recordCount: number;
+};
+type OptionUnit = {
+  typeId: string;
+  name: string;
+  code: string | null;
+  categoryName: string;
+  parameters: OptionParam[];
+};
 
 function GlassSelect({
   value,
@@ -33,12 +69,14 @@ function GlassSelect({
   onChange,
   size = "md",
   placeholder = "Select...",
+  disabled = false,
 }: {
   value: string;
   options: Option[];
   onChange: (v: string) => void;
   size?: "md" | "sm";
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -82,8 +120,9 @@ function GlassSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`${glassFieldBase} ${sizeClass} w-full cursor-pointer flex items-center justify-between gap-2 text-left hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(59,130,246,0.25)]`}
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className={`${glassFieldBase} ${sizeClass} w-full ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"} flex items-center justify-between gap-2 text-left hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(59,130,246,0.25)]`}
       >
         <span className={`truncate ${selected ? "" : "text-slate-400"}`}>
           {selected?.label ?? placeholder}
@@ -94,7 +133,7 @@ function GlassSelect({
         />
       </button>
 
-      {open && (
+      {open && !disabled && (
         <ul
           ref={listRef}
           role="listbox"
@@ -107,13 +146,17 @@ function GlassSelect({
                 key={opt.value}
                 role="option"
                 aria-selected={isSelected}
+                aria-disabled={opt.disabled}
                 onClick={() => {
+                  if (opt.disabled) return;
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`flex items-center justify-between gap-3 px-3 py-3 sm:py-2 rounded-xl text-sm sm:text-xs cursor-pointer transition-all duration-200 ease-out hover:bg-blue-500/15 hover:text-blue-700 hover:translate-x-1 ${
-                  isSelected ? "bg-blue-500/10 font-semibold text-blue-700" : "text-slate-700"
-                }`}
+                className={`flex items-center justify-between gap-3 px-3 py-3 sm:py-2 rounded-xl text-sm sm:text-xs transition-all duration-200 ease-out ${
+                  opt.disabled
+                    ? "cursor-not-allowed opacity-40"
+                    : "cursor-pointer hover:bg-blue-500/15 hover:text-blue-700 hover:translate-x-1"
+                } ${isSelected ? "bg-blue-500/10 font-semibold text-blue-700" : "text-slate-700"}`}
               >
                 <span className="min-w-0 break-words">{opt.label}</span>
                 {isSelected && <Check size={14} className="flex-shrink-0 text-blue-600" />}
@@ -126,33 +169,22 @@ function GlassSelect({
   );
 }
 
-const toOptions = (labels: string[]): Option[] => labels.map((l) => ({ value: l, label: l }));
-
 const durationOptions: Option[] = [
   { value: "Past 24 Hours", label: "Past 24 Hours (Hourly)" },
   { value: "Past 7 Days", label: "Past 7 Days (Daily)" },
   { value: "Past 30 Days", label: "Past 30 Days (Day-by-Day)" },
-  { value: "This Month", label: "This Month - Nov 2026 (Day-by-Day)" },
+  { value: "This Month", label: "This Month (Day-by-Day, to date)" },
   { value: "Custom Range", label: "Custom Date Range..." },
 ];
 
-const NICE_MAX = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
-const NICE_STEP = [1, 2, 2.5, 5, 10];
-
-const niceCeil = (v: number) => {
-  if (!isFinite(v) || v <= 0) return 1;
-  const exp = Math.pow(10, Math.floor(Math.log10(v)));
-  const f = v / exp;
-  const nf = NICE_MAX.find((n) => n >= f - 1e-9) ?? 10;
-  return Number((nf * exp).toPrecision(6));
-};
-
-const niceStep = (max: number) => {
-  const raw = max / 5;
-  const exp = Math.pow(10, Math.floor(Math.log10(raw)));
-  const f = raw / exp;
-  const nf = NICE_STEP.find((n) => n >= f - 1e-9) ?? 10;
-  return Number((nf * exp).toPrecision(6));
+// "Nice" number (1, 2, 5 x 10^n) used for round axis steps
+const niceNum = (range: number, round: boolean) => {
+  const exp = Math.floor(Math.log10(range));
+  const f = range / Math.pow(10, exp);
+  let nf: number;
+  if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+  else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return Number((nf * Math.pow(10, exp)).toPrecision(10));
 };
 
 const decimalsOf = (n: number) => {
@@ -162,121 +194,124 @@ const decimalsOf = (n: number) => {
   return d ? d.length : 0;
 };
 
-type ResolvedAxis = { max: number; step: number; decimals: number; ticks: number[]; warning: string };
+type AxisDomain = { lo: number; hi: number; nonNegative: boolean } | null;
 
-const resolveAxis = (cfg: AxisConfig, dataMax: number, fallback: { max: number; step: number }): ResolvedAxis => {
+// Zoom the axis onto the data (plus a little padding) so the line sits in the middle of the chart
+const niceScale = (lo: number, hi: number, nonNegative: boolean) => {
+  if (hi - lo < 1e-9) {
+    const pad = Math.abs(hi) * 0.1 || 1;
+    lo -= pad;
+    hi += pad;
+  } else {
+    const pad = (hi - lo) * 0.12;
+    lo -= pad;
+    hi += pad;
+  }
+  if (nonNegative && lo < 0) lo = 0;
+
+  const step = niceNum(niceNum(hi - lo, false) / 5, true);
+  const min = Number((Math.floor(lo / step + 1e-9) * step).toPrecision(10));
+  const max = Number((Math.ceil(hi / step - 1e-9) * step).toPrecision(10));
+  return { min, max, step };
+};
+
+type ResolvedAxis = { min: number; max: number; step: number; decimals: number; ticks: number[]; warning: string };
+
+const resolveAxis = (
+  cfg: AxisConfig,
+  domain: AxisDomain,
+  fallback: { min: number; max: number; step: number }
+): ResolvedAxis => {
   let warning = "";
+  let min: number;
+  let max: number;
+  let step: number;
 
-  let max = cfg.auto ? niceCeil(dataMax * 1.02) : parseFloat(cfg.maxText);
-  if (!isFinite(max) || max <= 0) {
-    warning = "Max must be a number greater than 0 - keeping the previous max.";
-    max = fallback.max;
+  if (cfg.auto) {
+    if (domain) {
+      const sc = niceScale(domain.lo, domain.hi, domain.nonNegative);
+      min = sc.min;
+      max = sc.max;
+      step = sc.step;
+    } else {
+      min = 0;
+      max = 1;
+      step = 0.2;
+    }
+  } else {
+    min = parseFloat(cfg.minText);
+    if (!isFinite(min)) {
+      warning = "Min must be a number - keeping the previous min.";
+      min = fallback.min;
+    }
+    max = parseFloat(cfg.maxText);
+    if (!isFinite(max) || max <= min) {
+      warning = warning || "Max must be a number greater than Min - keeping the previous max.";
+      max = fallback.max > min ? fallback.max : min + 1;
+    }
+    step = parseFloat(cfg.stepText);
+    if (!isFinite(step) || step <= 0) {
+      warning = warning || "Step must be a number greater than 0 - using an automatic step.";
+      step = niceNum((max - min) / 5, true);
+    }
+    if (Math.ceil((max - min) / step - 1e-9) > 10) {
+      const st = niceNum((max - min) / 5, true);
+      warning = warning || `Step is too small (more than 10 intervals) - showing every ${st} instead.`;
+      step = st;
+    }
   }
 
-  let step = cfg.auto ? niceStep(max) : parseFloat(cfg.stepText);
-  if (!isFinite(step) || step <= 0) {
-    warning = warning || "Step must be a number greater than 0 - using an automatic step.";
-    step = niceStep(max);
-  }
-
-  if (Math.ceil(max / step - 1e-9) > 10) {
-    const s = niceStep(max);
-    warning = warning || `Step is too small (more than 10 intervals) - showing every ${s} instead.`;
-    step = s;
-  }
-
-  const decimals = Math.min(4, Math.max(decimalsOf(step), decimalsOf(max)));
+  const decimals = Math.min(4, Math.max(decimalsOf(step), decimalsOf(min), decimalsOf(max)));
 
   const ticks: number[] = [];
-  for (let i = 0; i * step < max - 1e-9; i++) {
-    ticks.push(Number((i * step).toFixed(6)));
+  for (let i = 0; min + i * step < max - 1e-9; i++) {
+    ticks.push(Number((min + i * step).toFixed(6)));
   }
   ticks.push(max);
 
-  return { max, step, decimals, ticks, warning };
+  return { min, max, step, decimals, ticks, warning };
 };
 
-const getPos = (val: number, max: number) => Math.max(0, Math.min(100, 100 - (val / max) * 100));
+const getPos = (val: number, max: number, min = 0) =>
+  max > min ? Math.max(0, Math.min(100, 100 - ((val - min) / (max - min)) * 100)) : 50;
 
-const buildDailySeries = (start: Date, days: number): ChartPoint[] =>
-  Array.from({ length: days }, (_, i) => {
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-    const seed = d.getMonth() * 31 + d.getDate();
-    const y1 = Math.max(25, Math.min(98, Math.round(52 + 22 * Math.sin(seed * 0.55) + 12 * Math.sin(seed * 1.7))));
-    const y2 = Math.max(6, Math.min(48, Math.round(y1 * 0.42 + 6 * Math.cos(seed * 0.9) - 4)));
-    const status = y1 >= 80 ? "Critical" : y1 >= 65 ? "Warning" : "Normal";
-    const dd = String(d.getDate()).padStart(2, "0");
-    return {
-      time: dd,
-      sub: i === 0 || d.getDate() === 1 ? MONTHS[d.getMonth()] : undefined,
-      fullLabel: `${WEEKDAYS[d.getDay()]}, ${dd} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
-      y1,
-      y2,
-      status,
-    };
-  });
-
-const MAX_RANGE_DAYS = 366;
-const MAX_POINTS = 31;
-
-const parseLocalDate = (s: string): Date | null => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return isNaN(d.getTime()) ? null : d;
+const RANGE_KEYS: Record<string, string> = {
+  "Past 24 Hours": "24h",
+  "Past 7 Days": "7d",
+  "Past 30 Days": "30d",
+  "This Month": "month",
 };
 
-const formatDay = (d: Date) =>
-  `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+// Smooth (monotone cubic) path through one continuous run of points
+const smoothRun = (pts: { x: number; y: number }[]): string => {
+  const n = pts.length;
+  if (n < 2) return ""; // a single reading is drawn as a dot only
+  if (n === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y} `;
 
-type CustomSeries = { data: ChartPoint[]; error: string; info: string };
+  const slopes: number[] = [];
+  for (let i = 0; i < n - 1; i++) slopes.push((pts[i + 1].y - pts[i].y) / (pts[i + 1].x - pts[i].x));
 
-const buildCustomSeries = (startStr: string, endStr: string): CustomSeries => {
-  const start = parseLocalDate(startStr);
-  const end = parseLocalDate(endStr);
-  if (!start || !end) return { data: [], error: "Pick both a start date and an end date.", info: "" };
-
-  let days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-  if (days < 1) return { data: [], error: "The end date must be on or after the start date.", info: "" };
-
-  let limitNote = "";
-  if (days > MAX_RANGE_DAYS) {
-    days = MAX_RANGE_DAYS;
-    limitNote = ` (limited to the first ${MAX_RANGE_DAYS} days)`;
+  const tangents: number[] = new Array(n);
+  tangents[0] = slopes[0];
+  tangents[n - 1] = slopes[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    const a = slopes[i - 1];
+    const b = slopes[i];
+    tangents[i] = a * b <= 0 ? 0 : (2 * a * b) / (a + b);
   }
 
-  const daily = buildDailySeries(start, days);
-  if (days <= MAX_POINTS) {
-    return { data: daily, error: "", info: `${days} day${days > 1 ? "s" : ""} selected${limitNote}` };
+  let path = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    const dx = (p1.x - p0.x) / 3;
+    path += ` C ${p0.x + dx} ${p0.y + tangents[i] * dx}, ${p1.x - dx} ${p1.y - tangents[i + 1] * dx}, ${p1.x} ${p1.y}`;
   }
-
-  const bucket = Math.ceil(days / MAX_POINTS);
-  const data: ChartPoint[] = [];
-  let prevMonth = -1;
-  for (let s = 0; s < days; s += bucket) {
-    const chunk = daily.slice(s, s + bucket);
-    const first = new Date(start.getFullYear(), start.getMonth(), start.getDate() + s);
-    const last = new Date(start.getFullYear(), start.getMonth(), start.getDate() + s + chunk.length - 1);
-    const y1 = Math.round(chunk.reduce((a, p) => a + p.y1, 0) / chunk.length);
-    const y2 = Math.round(chunk.reduce((a, p) => a + p.y2, 0) / chunk.length);
-    data.push({
-      time: String(first.getDate()).padStart(2, "0"),
-      sub: first.getMonth() !== prevMonth ? MONTHS[first.getMonth()] : undefined,
-      fullLabel: `${formatDay(first)} - ${formatDay(last)} (average of ${chunk.length} days)`,
-      y1,
-      y2,
-      status: y1 >= 80 ? "Critical" : y1 >= 65 ? "Warning" : "Normal",
-    });
-    prevMonth = first.getMonth();
-  }
-  return {
-    data,
-    error: "",
-    info: `${days} days selected${limitNote} - each point is the average of ${bucket} days`,
-  };
+  return path + " ";
 };
 
 const statusStyle = (status: string) => {
+  if (status === "No data") return "bg-slate-500/20 text-slate-300 border-slate-500/40";
   if (status === "Critical") return "bg-red-500/20 text-red-300 border-red-500/40";
   if (status === "Warning") return "bg-amber-500/20 text-amber-300 border-amber-500/40";
   return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
@@ -286,128 +321,183 @@ export default function ManagerAnalyticsPage() {
   // No default selections: every dropdown starts empty and shows its placeholder.
   const [timeDuration, setTimeDuration] = useState("");
   const [isCustomMode, setIsCustomMode] = useState(false);
-  const [startDate, setStartDate] = useState("2026-11-01");
-  const [endDate, setEndDate] = useState("2026-11-30");
+  // Left empty on purpose: Date is read in the event handler below (Next.js cannot prerender new Date()).
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
+  // Each axis = Unit/Tank (typeId) + Parameter. Parameter list depends on the chosen unit.
+  const [y1TypeId, setY1TypeId] = useState("");
+  const [y2TypeId, setY2TypeId] = useState("");
   const [y1Param, setY1Param] = useState("");
   const [y2Param, setY2Param] = useState("");
 
-  const [y1Cfg, setY1Cfg] = useState<AxisConfig>({ auto: true, maxText: "100", stepText: "20" });
-  const [y2Cfg, setY2Cfg] = useState<AxisConfig>({ auto: true, maxText: "50", stepText: "10" });
-  const y1Last = useRef({ max: 100, step: 20 });
-  const y2Last = useRef({ max: 50, step: 10 });
+  const [unitsData, setUnitsData] = useState<OptionUnit[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/manager/analytics/options");
+        const json = await res.json();
+        if (!res.ok || !json.success) throw new Error(json.error || "Failed to load options");
+        if (!cancelled) setUnitsData(json.data as OptionUnit[]);
+      } catch (e: any) {
+        if (!cancelled) setOptionsError(e?.message || "Failed to load options");
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const unitOptions: Option[] = unitsData.map((u) => ({
+    value: u.typeId,
+    label: `${u.categoryName} · ${u.name}`,
+  }));
+
+  const paramOptionsFor = (typeId: string): Option[] =>
+    (unitsData.find((u) => u.typeId === typeId)?.parameters ?? []).map((p) => ({
+      value: p.name,
+      label: `${p.name}${p.unit ? ` (${p.unit})` : ""} · ${p.recordCount} reading${p.recordCount === 1 ? "" : "s"}`,
+      disabled: p.recordCount === 0,
+    }));
+
+  const axisLabels = (typeId: string, param: string, fallback: string) => {
+    const u = unitsData.find((x) => x.typeId === typeId);
+    const prm = u?.parameters.find((x) => x.name === param);
+    if (!u || !prm) return { short: fallback, full: fallback };
+    const short = `${prm.name}${prm.unit ? ` (${prm.unit})` : ""}`;
+    return { short, full: `${short} · ${u.name}` };
+  };
+
+  const [y1Cfg, setY1Cfg] = useState<AxisConfig>({ auto: true, minText: "0", maxText: "100", stepText: "20" });
+  const [y2Cfg, setY2Cfg] = useState<AxisConfig>({ auto: true, minText: "0", maxText: "50", stepText: "10" });
+  const y1Last = useRef({ min: 0, max: 100, step: 20 });
+  const y2Last = useRef({ min: 0, max: 50, step: 10 });
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
 
-  const customSeries: CustomSeries = isCustomMode
-    ? buildCustomSeries(startDate, endDate)
-    : { data: [], error: "", info: "" };
+  const rangeKey = isCustomMode ? "custom" : RANGE_KEYS[timeDuration] ?? "";
+  const customError = !isCustomMode
+    ? ""
+    : !startDate || !endDate
+    ? "Pick both a start date and an end date."
+    : endDate < startDate
+    ? "The end date must be on or after the start date."
+    : "";
 
-  const getDataset = (): ChartPoint[] => {
-    // Chart stays hidden until both Y1 and Y2 parameters are selected
-    if (!y1Param || !y2Param) return [];
+  const [series, setSeries] = useState<ChartPoint[]>([]);
+  const [seriesMeta, setSeriesMeta] = useState<{ y1: SeriesMeta; y2: SeriesMeta; info: string } | null>(null);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState("");
 
-    if (isCustomMode) return customSeries.data;
+  // Real data: re-fetch whenever a selection changes
+  useEffect(() => {
+    setSeries([]);
+    setSeriesMeta(null);
+    setDataError("");
+    if (!y1TypeId || !y1Param || !y2TypeId || !y2Param || !rangeKey || customError) return;
 
-    if (timeDuration === "Past 24 Hours") {
-      return [
-        { time: "00:00", y1: 35, y2: 10, status: "Normal" },
-        { time: "04:00", y1: 42, y2: 12, status: "Normal" },
-        { time: "08:00", y1: 65, y2: 22, status: "Warning" },
-        { time: "12:00", y1: 88, y2: 35, status: "Critical" },
-        { time: "16:00", y1: 50, y2: 15, status: "Normal" },
-        { time: "20:00", y1: 38, y2: 11, status: "Normal" },
-      ];
-    }
-    if (timeDuration === "Past 7 Days") {
-      return [
-        { time: "Day 01", y1: 45, y2: 18, status: "Normal" },
-        { time: "Day 02", y1: 52, y2: 22, status: "Normal" },
-        { time: "Day 03", y1: 78, y2: 45, status: "Warning" },
-        { time: "Day 04", y1: 30, y2: 12, status: "Normal" },
-        { time: "Day 05", y1: 48, y2: 20, status: "Normal" },
-        { time: "Day 06", y1: 95, y2: 68, status: "Critical" },
-        { time: "Day 07", y1: 40, y2: 16, status: "Normal" },
-      ];
-    }
-    if (timeDuration === "Past 30 Days") {
-      const start = new Date();
-      start.setDate(start.getDate() - 29);
-      return buildDailySeries(start, 30);
-    }
-    if (timeDuration === "This Month") {
-      return buildDailySeries(new Date(2026, 10, 1), 30);
+    const ctrl = new AbortController();
+    setDataLoading(true);
+
+    const qs = new URLSearchParams({
+      y1TypeId,
+      y1Param,
+      y2TypeId,
+      y2Param,
+      range: rangeKey,
+    });
+    if (rangeKey === "custom") {
+      qs.set("from", startDate);
+      qs.set("to", endDate);
     }
 
-    // Nothing selected yet
-    return [];
-  };
+    (async () => {
+      try {
+        const res = await fetch(`/api/manager/analytics?${qs.toString()}`, { signal: ctrl.signal });
+        const json = await res.json();
+        if (!res.ok || !json.success) throw new Error(json.error || "Failed to load analytics data");
+        setSeries(json.data.points as ChartPoint[]);
+        setSeriesMeta({ y1: json.data.y1, y2: json.data.y2, info: json.data.info });
+      } catch (e: any) {
+        if (e?.name !== "AbortError") setDataError(e?.message || "Failed to load analytics data");
+      } finally {
+        if (!ctrl.signal.aborted) setDataLoading(false);
+      }
+    })();
 
-  const currentScatterData = getDataset();
+    return () => ctrl.abort();
+  }, [y1TypeId, y1Param, y2TypeId, y2Param, rangeKey, startDate, endDate, customError]);
+
+  const currentScatterData = series;
+  const hasAnyData = series.some((p) => p.y1 !== null || p.y2 !== null);
   const pointCount = currentScatterData.length;
 
-  const y1DataMax = Math.max(0, ...currentScatterData.map((p) => p.y1));
-  const y2DataMax = Math.max(0, ...currentScatterData.map((p) => p.y2));
-  const y1Axis = resolveAxis(y1Cfg, y1DataMax, y1Last.current);
-  const y2Axis = resolveAxis(y2Cfg, y2DataMax, y2Last.current);
+  const domainFor = (isY1: boolean): AxisDomain => {
+    const vals = currentScatterData
+      .map((p) => (isY1 ? p.y1 : p.y2))
+      .filter((v): v is number => v !== null);
+    if (vals.length === 0) return null;
+
+    let lo = Math.min(...vals);
+    let hi = Math.max(...vals);
+    const baseSpan = Math.max(hi - lo, Math.abs((hi + lo) / 2) * 0.05, 1e-6);
+
+    // Include the standard min/max so the safe band is visible - unless that would squash the data.
+    const m = isY1 ? seriesMeta?.y1 : seriesMeta?.y2;
+    for (const lim of [m?.standardMin ?? null, m?.standardMax ?? null]) {
+      if (lim === null) continue;
+      const nlo = Math.min(lo, lim);
+      const nhi = Math.max(hi, lim);
+      if (nhi - nlo <= baseSpan * 3) {
+        lo = nlo;
+        hi = nhi;
+      }
+    }
+    return { lo, hi, nonNegative: vals.every((v) => v >= 0) && (m?.standardMin ?? 0) >= 0 };
+  };
+
+  const y1Axis = resolveAxis(y1Cfg, domainFor(true), y1Last.current);
+  const y2Axis = resolveAxis(y2Cfg, domainFor(false), y2Last.current);
 
   useEffect(() => {
-    if (!y1Axis.warning) y1Last.current = { max: y1Axis.max, step: y1Axis.step };
-    if (!y2Axis.warning) y2Last.current = { max: y2Axis.max, step: y2Axis.step };
+    if (!y1Axis.warning) y1Last.current = { min: y1Axis.min, max: y1Axis.max, step: y1Axis.step };
+    if (!y2Axis.warning) y2Last.current = { min: y2Axis.min, max: y2Axis.max, step: y2Axis.step };
   });
 
-  const y1OverCount = currentScatterData.filter((p) => p.y1 > y1Axis.max).length;
-  const y2OverCount = currentScatterData.filter((p) => p.y2 > y2Axis.max).length;
+  const y1OverCount = currentScatterData.filter((p) => p.y1 !== null && p.y1 > y1Axis.max).length;
+  const y2OverCount = currentScatterData.filter((p) => p.y2 !== null && p.y2 > y2Axis.max).length;
 
   useEffect(() => {
     setHoverIndex(null);
     setPinnedIndex(null);
-  }, [timeDuration, isCustomMode, startDate, endDate]);
+  }, [timeDuration, isCustomMode, startDate, endDate, series]);
 
   const activeIndex = hoverIndex ?? pinnedIndex;
   const activePoint = activeIndex !== null ? currentScatterData[activeIndex] ?? null : null;
 
   const getXPercent = (i: number) => (pointCount > 1 ? (i / (pointCount - 1)) * 100 : 50);
 
-  const getY1Position = (val: number) => getPos(val, y1Axis.max);
-  const getY2Position = (val: number) => getPos(val, y2Axis.max);
+  const getY1Position = (val: number) => getPos(val, y1Axis.max, y1Axis.min);
+  const getY2Position = (val: number) => getPos(val, y2Axis.max, y2Axis.min);
 
+  // Builds one continuous line through the days that have readings.
+  // Days with no reading get no dot, but the line simply carries on to the next real reading.
   const generateSmoothCurvePath = (isY1: boolean) => {
     const n = currentScatterData.length;
-    if (n === 0) return "";
-
-    const points = currentScatterData.map((pt, i) => {
-      const x = n > 1 ? (i / (n - 1)) * 100 : 50;
-      const y = isY1 ? getY1Position(pt.y1) : getY2Position(pt.y2);
-      return { x, y };
+    const run: { x: number; y: number }[] = [];
+    currentScatterData.forEach((pt, i) => {
+      const v = isY1 ? pt.y1 : pt.y2;
+      if (v === null) return;
+      run.push({ x: n > 1 ? (i / (n - 1)) * 100 : 50, y: isY1 ? getY1Position(v) : getY2Position(v) });
     });
-
-    if (n === 1) return `M ${points[0].x} ${points[0].y}`;
-    if (n === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-
-    const slopes: number[] = [];
-    for (let i = 0; i < n - 1; i++) {
-      slopes.push((points[i + 1].y - points[i].y) / (points[i + 1].x - points[i].x));
-    }
-
-    const tangents: number[] = new Array(n);
-    tangents[0] = slopes[0];
-    tangents[n - 1] = slopes[n - 2];
-    for (let i = 1; i < n - 1; i++) {
-      const a = slopes[i - 1];
-      const b = slopes[i];
-      tangents[i] = a * b <= 0 ? 0 : (2 * a * b) / (a + b);
-    }
-
-    let path = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 0; i < n - 1; i++) {
-      const p0 = points[i];
-      const p1 = points[i + 1];
-      const dx = (p1.x - p0.x) / 3;
-      path += ` C ${p0.x + dx} ${p0.y + tangents[i] * dx}, ${p1.x - dx} ${p1.y - tangents[i + 1] * dx}, ${p1.x} ${p1.y}`;
-    }
-    return path;
+    return smoothRun(run);
   };
 
   const activeLeft = activeIndex !== null ? getXPercent(activeIndex) : 0;
@@ -416,7 +506,12 @@ export default function ManagerAnalyticsPage() {
   const popupShift = -activeLeft;
   const popupAtBottom =
     activePoint !== null &&
-    (getY1Position(activePoint.y1) + getY2Position(activePoint.y2)) / 2 < 50;
+    (() => {
+      const ys: number[] = [];
+      if (activePoint.y1 !== null) ys.push(getY1Position(activePoint.y1));
+      if (activePoint.y2 !== null) ys.push(getY2Position(activePoint.y2));
+      return ys.length > 0 && ys.reduce((a, b) => a + b, 0) / ys.length < 50;
+    })();
 
   const dotSize = pointCount > 15 ? "w-2 h-2 sm:w-2.5 sm:h-2.5" : "w-3 h-3 sm:w-3.5 sm:h-3.5";
   const verticalGridStride = Math.max(1, Math.ceil(pointCount / 8));
@@ -435,22 +530,132 @@ export default function ManagerAnalyticsPage() {
     return Math.max(0, Math.min(pointCount - 1, Math.round(ratio * (pointCount - 1))));
   };
 
-  const y1Label = y1Param || "Y1";
-  const y2Label = y2Param || "Y2";
+  const y1Labels = axisLabels(y1TypeId, y1Param, "Y1");
+  const y2Labels = axisLabels(y2TypeId, y2Param, "Y2");
+  const y1Label = y1Labels.short; // short label for tooltip rows
+  const y2Label = y2Labels.short;
+
+  // ---- Summary numbers shown under the chart ----
+  const fmt = (n: number) => String(Number(n.toFixed(2)));
+
+  const seriesStats = (isY1: boolean) => {
+    const m = isY1 ? seriesMeta?.y1 : seriesMeta?.y2;
+    let sum = 0, count = 0, periods = 0, outPeriods = 0;
+    let min = Infinity, max = -Infinity;
+    let latest: number | null = null;
+    for (const p of series) {
+      const avg = isY1 ? p.y1 : p.y2;
+      const c = (isY1 ? p.y1Count : p.y2Count) ?? 0;
+      if (avg === null || c === 0) continue;
+      sum += avg * c;
+      count += c;
+      periods += 1;
+      min = Math.min(min, (isY1 ? p.y1Min : p.y2Min) ?? avg);
+      max = Math.max(max, (isY1 ? p.y1Max : p.y2Max) ?? avg);
+      latest = avg;
+      if (m && ((m.standardMin !== null && avg < m.standardMin) || (m.standardMax !== null && avg > m.standardMax))) {
+        outPeriods += 1;
+      }
+    }
+    if (count === 0) return null;
+    return { latest: latest as number, avg: sum / count, min, max, count, periods, outPeriods };
+  };
+
+  const renderSeriesCard = (isY1: boolean) => {
+    const labels = isY1 ? y1Labels : y2Labels;
+    const param = isY1 ? y1Param : y2Param;
+    const axis = isY1 ? y1Axis : y2Axis;
+    const m = isY1 ? seriesMeta?.y1 : seriesMeta?.y2;
+    const st = seriesStats(isY1);
+    const limits = m ? formatLimits(m.standardMin, m.standardMax, m.unit) : "";
+    const box = isY1 ? "bg-blue-400/15 border-blue-400/40" : "bg-purple-400/15 border-purple-400/40";
+    const dot = isY1 ? "bg-blue-500" : "bg-purple-500";
+    const nameColor = isY1 ? "text-blue-700" : "text-purple-700";
+
+    const cells: [string, string][] = st
+      ? [
+          ["Latest", fmt(st.latest)],
+          ["Average", fmt(st.avg)],
+          ["Min", fmt(st.min)],
+          ["Max", fmt(st.max)],
+          ["Readings", String(st.count)],
+          ["Out of std", limits ? `${st.outPeriods}/${st.periods}` : "-"],
+        ]
+      : [];
+
+    return (
+      <div className={`p-3.5 sm:p-4 rounded-2xl backdrop-blur-xl border text-slate-700 ${box}`}>
+        <div className="flex items-start gap-2.5">
+          <div className={`w-3 h-3 mt-0.5 rounded-full flex-shrink-0 ${dot}`} />
+          <div className="min-w-0">
+            <div className="text-xs font-bold">
+              {isY1 ? "Y1 (Blue)" : "Y2 (Purple)"}:{" "}
+              <span className={`${nameColor} font-semibold break-words`}>{param ? labels.full : "Not selected"}</span>
+            </div>
+            <div className="text-[11px] text-slate-600 mt-0.5">
+              {isY1 ? "Left" : "Right"} scale {axis.min} - {axis.max} (step {axis.step})
+              {limits && <> · Standard: {limits}</>}
+            </div>
+          </div>
+        </div>
+        {st ? (
+          <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 gap-2 mt-3">
+            {cells.map(([label, value]) => (
+              <div
+                key={label}
+                title={label === "Out of std" ? "Periods whose average is outside the standard range" : undefined}
+                className="rounded-xl bg-white/50 border border-white/70 px-2 py-1.5 text-center"
+              >
+                <div className="text-[9px] uppercase tracking-wide text-slate-500">{label}</div>
+                <div className="text-sm font-bold text-slate-800">{value}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500 mt-3">
+            {dataLoading ? "Loading..." : param ? "No readings in this period." : "Select a unit and parameter."}
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  // Dashed lines on the chart at the standard min / max so good vs bad is visible at a glance
+  const limitLines = (m: SeriesMeta | undefined, axis: ResolvedAxis, color: string, tag: string) =>
+    m
+      ? ([["min", m.standardMin], ["max", m.standardMax]] as const).map(([k, v]) =>
+          v !== null && v >= axis.min && v <= axis.max ? (
+            <div
+              key={`${tag}-${k}`}
+              className="absolute inset-x-0 border-t border-dashed z-[5]"
+              style={{ top: `${getPos(v, axis.max, axis.min)}%`, borderColor: color }}
+            >
+              <span
+                className={`absolute ${tag === "Y1" ? "left-1" : "right-1"} -top-3 text-[9px] font-mono leading-none`}
+                style={{ color }}
+              >
+                {tag} {k} {v}
+              </span>
+            </div>
+          ) : null
+        )
+      : null;
 
   const renderAxisControls = (opts: {
     title: string;
     titleColor: string;
+    unitId: string;
+    setUnitId: (v: string) => void;
     param: string;
     setParam: (v: string) => void;
-    options: string[];
+    paramOptions: Option[];
     placeholder: string;
     cfg: AxisConfig;
     setCfg: React.Dispatch<React.SetStateAction<AxisConfig>>;
     axis: ResolvedAxis;
     overCount: number;
   }) => {
-    const { title, titleColor, param, setParam, options, placeholder, cfg, setCfg, axis, overCount } = opts;
+    const { title, titleColor, unitId, setUnitId, param, setParam, paramOptions, placeholder, cfg, setCfg, axis, overCount } = opts;
     const inputClass = `${glassFieldBase} w-24 sm:w-20 px-2 py-2 sm:py-1.5 min-h-[44px] sm:min-h-0 text-base sm:text-xs disabled:bg-white/30 disabled:text-slate-400`;
 
     return (
@@ -460,13 +665,25 @@ export default function ManagerAnalyticsPage() {
             <Sliders size={14} />
             <span className="whitespace-nowrap">{title}</span>
           </div>
-          <div className="flex-1 w-full">
+          <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <GlassSelect
+              size="sm"
+              value={unitId}
+              onChange={(v) => {
+                setUnitId(v);
+                setParam(""); // parameter list changes with the unit
+              }}
+              options={unitOptions}
+              placeholder={optionsLoading ? "Loading units..." : "Select unit / tank..."}
+              disabled={optionsLoading || unitOptions.length === 0}
+            />
             <GlassSelect
               size="sm"
               value={param}
               onChange={setParam}
-              options={toOptions(options)}
-              placeholder={placeholder}
+              options={paramOptions}
+              placeholder={unitId ? placeholder : "Select a unit first"}
+              disabled={!unitId}
             />
           </div>
         </div>
@@ -476,7 +693,7 @@ export default function ManagerAnalyticsPage() {
             type="button"
             onClick={() =>
               cfg.auto
-                ? setCfg({ auto: false, maxText: String(axis.max), stepText: String(axis.step) })
+                ? setCfg({ auto: false, minText: String(axis.min), maxText: String(axis.max), stepText: String(axis.step) })
                 : setCfg({ ...cfg, auto: true })
             }
             className={`px-4 sm:px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 rounded-full border text-xs font-semibold cursor-pointer transition-all hover:-translate-y-0.5 ${
@@ -487,6 +704,19 @@ export default function ManagerAnalyticsPage() {
           >
             Auto
           </button>
+
+          <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+            Min
+            <input
+              type="number"
+              inputMode="decimal"
+              step="any"
+              disabled={cfg.auto}
+              value={cfg.auto ? String(axis.min) : cfg.minText}
+              onChange={(e) => setCfg({ ...cfg, minText: e.target.value })}
+              className={inputClass}
+            />
+          </label>
 
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
             Max
@@ -568,6 +798,13 @@ export default function ManagerAnalyticsPage() {
                 placeholder="Select duration..."
                 onChange={(v) => {
                   if (v === "Custom Range") {
+                    // Default the custom range to "this month so far" the first time it is opened
+                    if (!startDate || !endDate) {
+                      const d = new Date();
+                      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                      if (!startDate) setStartDate(`${ym}-01`);
+                      if (!endDate) setEndDate(`${ym}-${String(d.getDate()).padStart(2, "0")}`);
+                    }
                     setIsCustomMode(true);
                   } else {
                     setIsCustomMode(false);
@@ -602,12 +839,16 @@ export default function ManagerAnalyticsPage() {
                 className={`${glassFieldBase} w-full min-w-0 px-2.5 py-2 sm:py-1 min-h-[44px] sm:min-h-0 text-base sm:text-xs`}
               />
             </div>
-            {customSeries.error ? (
-              <span className="col-span-2 text-xs font-semibold text-red-600">{customSeries.error}</span>
+            {customError ? (
+              <span className="col-span-2 text-xs font-semibold text-red-600">{customError}</span>
             ) : (
-              <span className="col-span-2 text-xs font-medium text-blue-800">{customSeries.info}</span>
+              <span className="col-span-2 text-xs font-medium text-blue-800">{seriesMeta?.info ?? ""}</span>
             )}
           </div>
+        )}
+
+        {optionsError && (
+          <p className="text-xs font-semibold text-red-600">Could not load units/parameters: {optionsError}</p>
         )}
 
         {/* Axis controls */}
@@ -615,9 +856,11 @@ export default function ManagerAnalyticsPage() {
           {renderAxisControls({
             title: "Y1 Axis (Left):",
             titleColor: "text-blue-700",
+            unitId: y1TypeId,
+            setUnitId: setY1TypeId,
             param: y1Param,
             setParam: setY1Param,
-            options: ["COD Value (mg/L)", "BOD Value (mg/L)", "Suspended Solids (mg/L)"],
+            paramOptions: paramOptionsFor(y1TypeId),
             placeholder: "Select Y1 parameter...",
             cfg: y1Cfg,
             setCfg: setY1Cfg,
@@ -627,9 +870,11 @@ export default function ManagerAnalyticsPage() {
           {renderAxisControls({
             title: "Y2 Axis (Right):",
             titleColor: "text-purple-700",
+            unitId: y2TypeId,
+            setUnitId: setY2TypeId,
             param: y2Param,
             setParam: setY2Param,
-            options: ["Turbidity (NTU)", "pH Level", "Temperature (°C)"],
+            paramOptions: paramOptionsFor(y2TypeId),
             placeholder: "Select Y2 parameter...",
             cfg: y2Cfg,
             setCfg: setY2Cfg,
@@ -639,12 +884,12 @@ export default function ManagerAnalyticsPage() {
         </div>
 
         {/* Dual-Axis Visual Board */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 items-center">
-          <div className="lg:col-span-3 bg-slate-900/85 backdrop-blur-2xl rounded-3xl p-3 sm:p-6 relative h-[26rem] sm:h-80 flex flex-col justify-between text-slate-300 border border-white/10 ring-1 ring-inset ring-white/10 overflow-hidden shadow-[0_20px_60px_rgba(15,23,42,0.35)]">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem] gap-4 sm:gap-5 w-full items-stretch">
+          <div className="w-full bg-slate-900/85 backdrop-blur-2xl rounded-3xl p-3 sm:p-6 relative h-[24rem] sm:h-[21rem] lg:h-auto lg:min-h-[21rem] flex flex-col justify-between text-slate-300 border border-white/10 ring-1 ring-inset ring-white/10 overflow-hidden shadow-[0_20px_60px_rgba(15,23,42,0.35)]">
 
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-0.5 text-[10px] sm:text-[11px] font-mono text-slate-400 z-10 px-1 sm:px-6">
-              <span className="text-blue-400 font-bold break-words">Y1: {y1Param || "Not selected"} (Blue Series)</span>
-              <span className="text-purple-400 font-bold break-words">Y2: {y2Param || "Not selected"} (Purple Series)</span>
+              <span className="text-blue-400 font-bold break-words">Y1: {y1Param ? y1Labels.full : "Not selected"} (Blue Series)</span>
+              <span className="text-purple-400 font-bold break-words">Y2: {y2Param ? y2Labels.full : "Not selected"} (Purple Series)</span>
             </div>
 
             <div className="relative flex-1 flex items-center px-8 sm:px-10 my-2">
@@ -653,7 +898,7 @@ export default function ManagerAnalyticsPage() {
                   <span
                     key={idx}
                     className="absolute right-1 -translate-y-1/2 text-[9px] sm:text-[10px] font-mono text-blue-400/80 leading-none"
-                    style={{ top: `${getPos(t, y1Axis.max)}%` }}
+                    style={{ top: `${getPos(t, y1Axis.max, y1Axis.min)}%` }}
                   >
                     {t.toFixed(y1Axis.decimals)}
                   </span>
@@ -665,7 +910,7 @@ export default function ManagerAnalyticsPage() {
                   <span
                     key={idx}
                     className="absolute left-1 -translate-y-1/2 text-[9px] sm:text-[10px] font-mono text-purple-400/80 leading-none"
-                    style={{ top: `${getPos(t, y2Axis.max)}%` }}
+                    style={{ top: `${getPos(t, y2Axis.max, y2Axis.min)}%` }}
                   >
                     {t.toFixed(y2Axis.decimals)}
                   </span>
@@ -677,7 +922,7 @@ export default function ManagerAnalyticsPage() {
                   <div
                     key={`hg-${idx}`}
                     className="absolute inset-x-0 h-px bg-white/15"
-                    style={{ top: `${getPos(t, y1Axis.max)}%` }}
+                    style={{ top: `${getPos(t, y1Axis.max, y1Axis.min)}%` }}
                   >
                     <div className="absolute -left-1.5 w-1.5 h-px bg-blue-400/70" />
                   </div>
@@ -686,9 +931,12 @@ export default function ManagerAnalyticsPage() {
                   <div
                     key={`rt-${idx}`}
                     className="absolute -right-1.5 w-1.5 h-px bg-purple-400/70"
-                    style={{ top: `${getPos(t, y2Axis.max)}%` }}
+                    style={{ top: `${getPos(t, y2Axis.max, y2Axis.min)}%` }}
                   />
                 ))}
+
+                {pointCount > 0 && limitLines(seriesMeta?.y1, y1Axis, "rgba(96,165,250,0.85)", "Y1")}
+                {pointCount > 0 && limitLines(seriesMeta?.y2, y2Axis, "rgba(192,132,252,0.85)", "Y2")}
 
                 {currentScatterData.map((_, i) =>
                   i % verticalGridStride === 0 ? (
@@ -731,7 +979,19 @@ export default function ManagerAnalyticsPage() {
                       ? "Select a Y2 parameter to see the chart"
                       : !isCustomMode && !timeDuration
                       ? "Select a duration to see the chart"
+                      : customError
+                      ? customError
+                      : dataLoading
+                      ? "Loading data..."
+                      : dataError
+                      ? dataError
                       : "Select a valid date range to see the chart"}
+                  </div>
+                )}
+
+                {pointCount > 0 && !hasAnyData && (
+                  <div className="absolute inset-0 flex items-center justify-center text-center px-2 text-xs font-medium text-slate-400 z-10">
+                    No verified readings found for this selection in the chosen period
                   </div>
                 )}
 
@@ -763,12 +1023,13 @@ export default function ManagerAnalyticsPage() {
 
                 {currentScatterData.map((pt, i) => {
                   const leftPercentage = getXPercent(i);
-                  const y1Pos = getY1Position(pt.y1);
-                  const y2Pos = getY2Position(pt.y2);
+                  const y1Pos = pt.y1 !== null ? getY1Position(pt.y1) : 0;
+                  const y2Pos = pt.y2 !== null ? getY2Position(pt.y2) : 0;
                   const isActive = activeIndex === i;
 
                   return (
                     <React.Fragment key={i}>
+                      {pt.y1 !== null && (
                       <div
                         className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 transition-all duration-300 z-30"
                         style={{ left: `${leftPercentage}%`, top: `${y1Pos}%` }}
@@ -778,7 +1039,9 @@ export default function ManagerAnalyticsPage() {
                           <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[9px] leading-none text-blue-300">▲</span>
                         )}
                       </div>
+                      )}
 
+                      {pt.y2 !== null && (
                       <div
                         className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 transition-all duration-300 z-30"
                         style={{ left: `${leftPercentage}%`, top: `${y2Pos}%` }}
@@ -788,6 +1051,7 @@ export default function ManagerAnalyticsPage() {
                           <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[9px] leading-none text-purple-300">▲</span>
                         )}
                       </div>
+                      )}
                     </React.Fragment>
                   );
                 })}
@@ -802,12 +1066,24 @@ export default function ManagerAnalyticsPage() {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
                         <span className="text-blue-300">{y1Label}:</span>
-                        <span className="font-semibold">{activePoint.y1}</span>
+                        <span className="font-semibold">{activePoint.y1 ?? "No data"}</span>
+                        {activePoint.y1 !== null && (activePoint.y1Count ?? 0) > 0 && (
+                          <span className="text-slate-400 text-[10px]">
+                            n={activePoint.y1Count}
+                            {(activePoint.y1Count ?? 0) > 1 ? ` · min ${activePoint.y1Min} · max ${activePoint.y1Max}` : ""}
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
                         <span className="text-purple-300">{y2Label}:</span>
-                        <span className="font-semibold">{activePoint.y2}</span>
+                        <span className="font-semibold">{activePoint.y2 ?? "No data"}</span>
+                        {activePoint.y2 !== null && (activePoint.y2Count ?? 0) > 0 && (
+                          <span className="text-slate-400 text-[10px]">
+                            n={activePoint.y2Count}
+                            {(activePoint.y2Count ?? 0) > 1 ? ` · min ${activePoint.y2Min} · max ${activePoint.y2Max}` : ""}
+                          </span>
+                        )}
                       </div>
                       <div>
                         <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusStyle(activePoint.status)}`}>
@@ -844,31 +1120,15 @@ export default function ManagerAnalyticsPage() {
                 Timeline: {isCustomMode ? `${startDate} → ${endDate}` : timeDuration || "Not selected"}
               </span>
               <span className="text-blue-400 font-bold">Touch / hover a date for details</span>
-              <span className="hidden sm:inline">Synced</span>
+              <span className="hidden sm:inline">{dataLoading ? "Loading..." : seriesMeta ? "Live data" : ""}</span>
             </div>
           </div>
 
-          <div className="space-y-3 sm:space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">Series Color Legend</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3 text-xs">
-              <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-blue-400/15 backdrop-blur-xl border border-blue-400/40 text-slate-700">
-                <div className="w-3 h-3 mt-0.5 rounded-full bg-blue-500 flex-shrink-0"></div>
-                <div className="min-w-0">
-                  <span className="font-bold">Y1 Series (Blue):</span> Represents <span className="text-blue-700 font-semibold">{y1Param || "Not selected"}</span> values mapped on the left scale.
-                  <div className="text-[11px] text-slate-600 mt-1">
-                    Scale: 0 - {y1Axis.max} (step {y1Axis.step})
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-purple-400/15 backdrop-blur-xl border border-purple-400/40 text-slate-700">
-                <div className="w-3 h-3 mt-0.5 rounded-full bg-purple-500 flex-shrink-0"></div>
-                <div className="min-w-0">
-                  <span className="font-bold">Y2 Series (Purple):</span> Represents <span className="text-purple-700 font-semibold">{y2Param || "Not selected"}</span> values mapped on the right scale.
-                  <div className="text-[11px] text-slate-600 mt-1">
-                    Scale: 0 - {y2Axis.max} (step {y2Axis.step})
-                  </div>
-                </div>
-              </div>
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">Series Summary</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3 text-xs">
+              {renderSeriesCard(true)}
+              {renderSeriesCard(false)}
             </div>
           </div>
         </div>
