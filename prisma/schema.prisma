@@ -254,5 +254,10 @@ model PrivateParameterPrice {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  @@unique([categoryId, parameterId]) // a parameter is priced once per category
+  // Same parameter can be priced in several sub-categories of one category,
+  // but only once per sub-category. (NULL sub-category duplicates are blocked in the API,
+  // because Postgres treats NULLs as distinct in unique indexes.)
+  // Billing counts a parameter once per category -> see lib/privateBilling.ts
+  @@unique([categoryId, subCategoryId, parameterId])
+  @@index([categoryId, parameterId])
 }
