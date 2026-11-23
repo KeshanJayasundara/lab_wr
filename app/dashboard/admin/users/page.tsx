@@ -154,6 +154,8 @@ function RoleBadge({ role }: { role: string }) {
       ? "Lab Head (Manager)"
       : role === "INVENTORY_MANAGER"
       ? "Stock Keeper"
+      : role === "PLANT_OPERATOR"
+      ? "Plant Operator"
       : "Lab Assistant";
 
   return (
@@ -165,6 +167,8 @@ function RoleBadge({ role }: { role: string }) {
           ? "bg-amber-400/20 text-amber-700 border-amber-400/40"
           : role === "INVENTORY_MANAGER"
           ? "bg-blue-400/20 text-blue-700 border-blue-400/40"
+          : role === "PLANT_OPERATOR"
+          ? "bg-cyan-400/20 text-cyan-700 border-cyan-400/40"
           : "bg-emerald-400/20 text-emerald-700 border-emerald-400/40"
       }`}
     >
@@ -271,6 +275,7 @@ export default function AdminUsersPage() {
     { value: "MANAGER", label: "Lab Head (Manager)" },
     { value: "INVENTORY_MANAGER", label: "Stock Keeper (Inventory)" },
     { value: "TECHNICIAN", label: "Lab Assistant (Technician)" },
+    { value: "PLANT_OPERATOR", label: "Plant Operator" },
   ];
 
   const q = searchTerm.toLowerCase();

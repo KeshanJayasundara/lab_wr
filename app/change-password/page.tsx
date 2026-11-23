@@ -4,13 +4,14 @@ import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function ChangePasswordPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPasswords, setShowPasswords] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -83,30 +84,54 @@ export default function ChangePasswordPage() {
               <label className="text-xs sm:text-sm font-semibold text-slate-700">
                 New Password
               </label>
-              <Input 
-                type="password" 
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="At least 6 characters" 
-                required 
-                minLength={6}
-                className="text-base sm:text-sm h-11"
-              />
+              <div className="relative">
+                <Input 
+                  type={showPasswords ? "text" : "password"} 
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 6 characters" 
+                  required 
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="text-base sm:text-sm h-11 pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswords((v) => !v)}
+                  aria-label={showPasswords ? "Hide password" : "Show password"}
+                  title={showPasswords ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  {showPasswords ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-col gap-1.5 w-full">
               <label className="text-xs sm:text-sm font-semibold text-slate-700">
                 Confirm New Password
               </label>
-              <Input 
-                type="password" 
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter new password" 
-                required 
-                minLength={6}
-                className="text-base sm:text-sm h-11"
-              />
+              <div className="relative">
+                <Input 
+                  type={showPasswords ? "text" : "password"} 
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password" 
+                  required 
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="text-base sm:text-sm h-11 pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswords((v) => !v)}
+                  aria-label={showPasswords ? "Hide password" : "Show password"}
+                  title={showPasswords ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  {showPasswords ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
 
             <div className="pt-2 sm:pt-3">
