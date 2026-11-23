@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Truck, PlusCircle, CheckCircle2, XCircle, Loader2, ClipboardCheck, AlertCircle } from "lucide-react";
 import { GALI_RANGES, evaluateGali } from "@/lib/galiRanges";
+import GlassSearchSelect from "@/components/plant-operator/GlassSearchSelect";
 
 // Shared "frosted glass" look (same as the other pages)
 const glass =
@@ -223,21 +224,17 @@ export default function GaliPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Select vehicle</label>
-            <select
+            <GlassSearchSelect
               value={vehicleId}
-              onChange={(e) => {
-                setVehicleId(e.target.value);
+              onChange={(v) => {
+                setVehicleId(v);
                 setCheckNotice(null);
               }}
-              className={inputClass}
-            >
-              <option value="">-- Select a registered vehicle --</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicleNumber}
-                </option>
-              ))}
-            </select>
+              options={vehicles.map((v) => ({ value: v.id, label: v.vehicleNumber }))}
+              placeholder="-- Select a registered vehicle --"
+              searchPlaceholder="Search vehicle number..."
+              emptyText={vehicles.length === 0 ? "No vehicles registered yet" : "No vehicle matches your search"}
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
