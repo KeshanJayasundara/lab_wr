@@ -261,3 +261,82 @@ model PrivateParameterPrice {
   @@unique([categoryId, subCategoryId, parameterId])
   @@index([categoryId, parameterId])
 }
+// ---------------------------------------------------------------
+// Plant Operator module (managed by the Manager)
+// ---------------------------------------------------------------
+
+// Duties shown in the Manager's "Plant Operator" section (e.g. Gali Operator, Tank Operator)
+model PlantDuty {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  kind      String   @default("OTHER") // GALI | TANK | OTHER
+  createdAt DateTime @default(now())
+}
+
+// Gali parameters + allowed range (e.g. ES 0-10, PH 0-10), set by the Manager
+model GaliParameter {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  unit      String?
+  min       Float
+  max       Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PlantTank {
+  id         String          @id @default(uuid())
+  name       String          @unique
+  parameters TankParameter[]
+  readings   TankReading[]
+  createdAt  DateTime        @default(now())
+}
+
+// A parameter the tank operator must check on this tank (range is optional)
+model TankParameter {
+  id        String    @id @default(uuid())
+  tankId    String
+  tank      PlantTank @relation(fields: [tankId], references: [id], onDelete: Cascade)
+  name      String
+  unit      String?
+  min       Float?
+  max       Float?
+  createdAt DateTime  @default(now())
+
+  @@unique([tankId, name])
+}
+
+// The 3 daily shifts (shiftNo 1..3)
+model TankShift {
+  id        String @id @default(uuid())
+  shiftNo   Int    @unique
+  label     String
+  startTime String // "HH:mm"
+  endTime   String // "HH:mm"
+}
+
+// Which operator works which shift on which day
+model TankShiftAssignment {
+  id      String @id @default(uuid())
+  date    String // YYYY-MM-DD (Sri Lanka)
+  shiftNo Int
+  userId  String
+
+  @@unique([date, shiftNo, userId])
+  @@index([date])
+}
+
+// One reading = one tank, one day, one shift
+model TankReading {
+  id         String    @id @default(uuid())
+  tankId     String
+  tank       PlantTank @relation(fields: [tankId], references: [id], onDelete: Cascade)
+  date       String    // YYYY-MM-DD (Sri Lanka)
+  shiftNo    Int
+  values     Json      // { "<parameterId>": number }
+  recordedBy String
+  createdAt  DateTime  @default(now())
+
+  @@unique([tankId, date, shiftNo])
+  @@index([date])
+}
