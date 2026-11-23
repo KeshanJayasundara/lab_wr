@@ -20,6 +20,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       className={`${inter.variable} h-full antialiased scroll-smooth`}
     >
       <body className={`${inter.className} min-h-full flex flex-col`}>

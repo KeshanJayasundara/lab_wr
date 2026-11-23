@@ -18,6 +18,7 @@ import {
   Sliders,
   Upload,
   Droplets,
+  HardHat,
   X, 
   Menu, 
   Bell 
@@ -38,33 +39,51 @@ export default function ManagerLayout({
   const [profileError, setProfileError] = useState("");
 
   useEffect(() => {
+    let inFlight = false;
+    let failures = 0;
+    let cancelled = false;
+
     const loadProfile = async () => {
+      // Skip when tab is hidden or the previous request is still running
+      if (inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
       try {
         const res = await fetch("/api/manager/profile", { cache: "no-store", credentials: "same-origin" });
         const json = await res.json();
+        if (cancelled) return;
         // Account deleted / deactivated by the admin (or session gone) -> sign out automatically
         if (res.status === 401 || res.status === 403) {
           window.location.replace(`/login?reason=${json?.code || "session"}`);
           return;
         }
         if (res.ok && json.success) {
-          setProfile({ name: json.data.name, email: json.data.email });
+          failures = 0;
+          setProfile((prev) =>
+            prev && prev.name === json.data.name && prev.email === json.data.email
+              ? prev
+              : { name: json.data.name, email: json.data.email }
+          );
           setProfileError("");
         } else {
-          console.error("Manager profile load failed:", res.status, json);
-          setProfileError(json?.error || `Error ${res.status}`);
+          failures++;
+          // Transient server/DB error: only show it after 2 failures in a row
+          if (failures >= 2) setProfileError(json?.error || `Error ${res.status}`);
         }
-      } catch (err) {
-        console.error("Manager profile load failed:", err);
-        setProfileError("Could not load profile");
+      } catch {
+        // Network blip / dev server compiling: stay quiet, retry on the next tick
+        failures++;
+        if (failures >= 2 && !cancelled) setProfileError("Could not load profile");
+      } finally {
+        inFlight = false;
       }
     };
 
     loadProfile();
-    // Check the account every 5 seconds (and when the tab regains focus)
-    const timer = setInterval(loadProfile, 5000);
+    // Account check every 60 seconds (was 5s) + when the tab regains focus
+    const timer = setInterval(loadProfile, 60000);
     window.addEventListener("focus", loadProfile);
     return () => {
+      cancelled = true;
       clearInterval(timer);
       window.removeEventListener("focus", loadProfile);
     };
@@ -92,6 +111,7 @@ export default function ManagerLayout({
     { name: "Parameter Ranges", href: "/dashboard/manager/ranges", icon: Sliders },
     { name: "Parameter Dosages", href: "/dashboard/manager/parameter-dosages", icon: FlaskConical },
     { name: "Private Samples", href: "/dashboard/manager/private-samples", icon: Droplets },
+    { name: "Plant Operator", href: "/dashboard/manager/plant-operator", icon: HardHat },
     { name: "Breakage Monitoring", href: "/dashboard/manager/breakages", icon: ShieldAlert },
   ];
 
@@ -148,10 +168,10 @@ export default function ManagerLayout({
           </button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="glass-scroll flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const isActive = item.href === "/dashboard/manager" ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
                 key={item.name}

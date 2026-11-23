@@ -52,10 +52,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { id: true, name: true, email: true, status: true },
-    });
+    const findUser = () =>
+      prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { id: true, name: true, email: true, status: true },
+      });
+    // Neon (serverless Postgres) can be asleep on the first request -> retry once
+    let user;
+    try {
+      user = await findUser();
+    } catch {
+      await new Promise((r) => setTimeout(r, 800));
+      user = await findUser();
+    }
     if (!user) {
       return clearedSessionResponse("ACCOUNT_DELETED", "Your account no longer exists.", 401);
     }

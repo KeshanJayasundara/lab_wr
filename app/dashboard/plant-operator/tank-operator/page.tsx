@@ -1,382 +1,195 @@
+// >>> SAVE AS: app/dashboard/plant-operator/tank-operator/page.tsx   (REPLACE the whole file) - delete this line after saving <<<
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Truck, PlusCircle, CheckCircle2, XCircle, Loader2, ClipboardCheck, AlertCircle } from "lucide-react";
-import { GALI_RANGES, evaluateGali } from "@/lib/galiRanges";
+import React, { useCallback, useEffect, useState } from "react";
+import { AlertCircle, CheckCircle2, Clock, Droplets, Loader2, Lock, PlayCircle, Save } from "lucide-react";
 
-// Shared "frosted glass" look (same as the other pages)
 const glass =
   "bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(15,23,42,0.10)] ring-1 ring-inset ring-white/40";
-
 const inputClass =
-  "w-full h-11 rounded-xl border border-white/70 bg-white/70 px-3 text-sm text-slate-800 " +
-  "placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40";
+  "w-full h-11 rounded-xl border border-white/70 bg-white/70 px-3 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/40";
 
-type Vehicle = { id: string; vehicleNumber: string };
-
-type CheckRow = {
-  id: string;
-  esValue: number;
-  phValue: number;
-  inRange: boolean;
-  decision: "APPROVED" | "REJECTED";
-  checkedBy: string;
-  createdAt: string;
-  vehicle: { vehicleNumber: string };
+type Param = { id: string; name: string; unit: string | null; min: number | null; max: number | null };
+type Tank = { id: string; name: string; parameters: Param[] };
+type Shift = {
+  shiftNo: number; label: string; startTime: string; endTime: string;
+  status: "RUNNING" | "CLOSED" | "UPCOMING";
 };
-
+type Reading = { tankId: string; shiftNo: number; values: Record<string, number>; recordedBy: string };
+type Data = { date: string; shifts: Shift[]; operatorName: string; tanks: Tank[]; readings: Reading[] };
 type Notice = { type: "success" | "error"; text: string } | null;
 
-const toNum = (v: string) => (v.trim() === "" ? NaN : Number(v));
+const outOfRange = (p: Param, v: number) => (p.min !== null && v < p.min) || (p.max !== null && v > p.max);
 
-export default function GaliPage() {
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [checks, setChecks] = useState<CheckRow[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function TankOperatorPage() {
+  const [data, setData] = useState<Data | null>(null);
+  const [error, setError] = useState("");
+  const [tankId, setTankId] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [signName, setSignName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
 
-  // Register vehicle
-  const [newVehicle, setNewVehicle] = useState("");
-  const [registering, setRegistering] = useState(false);
-  const [registerNotice, setRegisterNotice] = useState<Notice>(null);
-
-  // Daily check
-  const [vehicleId, setVehicleId] = useState("");
-  const [es, setEs] = useState("");
-  const [ph, setPh] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [checkNotice, setCheckNotice] = useState<Notice>(null);
-
-  const loadVehicles = useCallback(async () => {
-    const res = await fetch("/api/plant-operator/gali/vehicles", { cache: "no-store", credentials: "same-origin" });
-    const json = await res.json();
-    if (res.ok && json.success) setVehicles(json.data);
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/plant-operator/tank", { cache: "no-store", credentials: "same-origin" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || `Error ${res.status}`);
+      setData(json.data);
+      setError("");
+      setTankId((t) => t || json.data.tanks[0]?.id || "");
+    } catch (e: any) { setError(e.message); }
   }, []);
 
-  const loadChecks = useCallback(async () => {
-    const res = await fetch("/api/plant-operator/gali/checks", { cache: "no-store", credentials: "same-origin" });
-    const json = await res.json();
-    if (res.ok && json.success) setChecks(json.data);
-  }, []);
-
+  // Load now, then every 20 seconds so the shift blocks open / close automatically
   useEffect(() => {
-    (async () => {
-      try {
-        await Promise.all([loadVehicles(), loadChecks()]);
-      } catch (err) {
-        console.error("Gali load failed:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [loadVehicles, loadChecks]);
+    load();
+    const t = setInterval(load, 20000);
+    return () => clearInterval(t);
+  }, [load]);
 
-  // ---- Register a vehicle ----
-  const registerVehicle = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (registering) return;
-    setRegistering(true);
-    setRegisterNotice(null);
+  // The shift that is open right now
+  const activeShift = data?.shifts.find((s) => s.status === "RUNNING") ?? null;
+  const tank = data?.tanks.find((t) => t.id === tankId);
+  const existing = activeShift ? data?.readings.find((r) => r.tankId === tankId && r.shiftNo === activeShift.shiftNo) : undefined;
+
+  // Pre-fill only when the tank / shift / saved values really change (not on every refresh)
+  const fillKey = `${tankId}|${activeShift?.shiftNo ?? ""}|${existing ? JSON.stringify(existing.values) : ""}`;
+  useEffect(() => {
+    if (!tank) return;
+    const next: Record<string, string> = {};
+    tank.parameters.forEach((p) => { const v = existing?.values?.[p.id]; next[p.id] = v === undefined ? "" : String(v); });
+    setValues(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillKey]);
+
+  const allFilled = !!tank && tank.parameters.length > 0 && tank.parameters.every((p) => values[p.id]?.trim() !== "" && Number.isFinite(Number(values[p.id])));
+  const canSubmit = !!activeShift && allFilled && signName.trim() !== "" && !saving;
+
+  const save = async () => {
+    if (!tank || !activeShift || !canSubmit) return;
+    setSaving(true); setNotice(null);
     try {
-      const res = await fetch("/api/plant-operator/gali/vehicles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ vehicleNumber: newVehicle }),
+      const res = await fetch("/api/plant-operator/tank", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tankId: tank.id, shiftNo: activeShift.shiftNo, values, signName }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to register vehicle");
-      setRegisterNotice({ type: "success", text: `Vehicle ${json.data.vehicleNumber} registered.` });
-      setNewVehicle("");
-      await loadVehicles();
-      setVehicleId(json.data.id); // pick the new vehicle for the check
-    } catch (err: any) {
-      setRegisterNotice({ type: "error", text: err.message });
-    } finally {
-      setRegistering(false);
-    }
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save");
+      setNotice({ type: "success", text: `${tank.name} - reading saved.` });
+      setSignName("");
+      await load();
+    } catch (e: any) { setNotice({ type: "error", text: e.message }); await load(); }
+    finally { setSaving(false); }
   };
 
-  // ---- Auto result for the ES / PH values ----
-  const esNum = toNum(es);
-  const phNum = toNum(ph);
-  const bothFilled = !Number.isNaN(esNum) && !Number.isNaN(phNum);
-  const result = useMemo(() => (bothFilled ? evaluateGali(esNum, phNum) : null), [bothFilled, esNum, phNum]);
-
-  const canReject = !!vehicleId && !!result && !submitting;
-  // Approval is only possible when BOTH values are inside the range
-  const canApprove = canReject && !!result?.approved;
-
-  const submitCheck = async (decision: "APPROVED" | "REJECTED") => {
-    if (submitting) return;
-    if (decision === "APPROVED" ? !canApprove : !canReject) return;
-    setSubmitting(true);
-    setCheckNotice(null);
-    try {
-      const res = await fetch("/api/plant-operator/gali/checks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ vehicleId, es, ph, decision }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save the check");
-      const plate = vehicles.find((v) => v.id === vehicleId)?.vehicleNumber ?? "Vehicle";
-      setCheckNotice({
-        type: "success",
-        text: decision === "APPROVED" ? `${plate} approved.` : `${plate} rejected.`,
-      });
-      setEs("");
-      setPh("");
-      await loadChecks();
-    } catch (err: any) {
-      setCheckNotice({ type: "error", text: err.message });
-    } finally {
-      setSubmitting(false);
-    }
+  const badge = (s: Shift) => {
+    if (s.status === "RUNNING") return { text: "Running now", cls: "bg-emerald-400/20 text-emerald-700 border-emerald-400/50", Icon: PlayCircle };
+    if (s.status === "CLOSED") return { text: "Closed", cls: "bg-slate-400/20 text-slate-600 border-slate-400/40", Icon: Lock };
+    return { text: "Not started", cls: "bg-amber-400/20 text-amber-700 border-amber-400/50", Icon: Clock };
   };
-
-  const renderNotice = (notice: Notice) =>
-    notice ? (
-      <div
-        className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border ${
-          notice.type === "success"
-            ? "bg-emerald-500/10 text-emerald-700 border-emerald-400/40"
-            : "bg-red-500/10 text-red-700 border-red-400/40"
-        }`}
-      >
-        {notice.type === "success" ? (
-          <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
-        ) : (
-          <AlertCircle size={16} className="mt-0.5 shrink-0" />
-        )}
-        <span>{notice.text}</span>
-      </div>
-    ) : null;
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
-          <Truck size={20} />
-        </div>
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-400 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30"><Droplets size={20} /></div>
         <div>
-          <h1 className="text-lg sm:text-xl font-semibold text-slate-800 tracking-tight">Gali</h1>
-          <p className="text-xs text-slate-600">Register Gali vehicles and check them daily.</p>
+          <h1 className="text-lg sm:text-xl font-semibold text-slate-800 tracking-tight">Tank Operator</h1>
+          <p className="text-xs text-slate-600">Enter the tank readings for your shift. A shift opens and closes automatically by time.</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-        {/* ---------------- Register vehicle ---------------- */}
-        <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
-          <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-            <PlusCircle size={18} className="text-emerald-600" /> Register Gali Vehicle
-          </h2>
-          <form onSubmit={registerVehicle} className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Vehicle number</label>
-              <input
-                type="text"
-                value={newVehicle}
-                onChange={(e) => setNewVehicle(e.target.value)}
-                placeholder="e.g. NW CAB-1234"
-                maxLength={20}
-                className={inputClass}
-              />
-            </div>
-            {renderNotice(registerNotice)}
-            <button
-              type="submit"
-              disabled={registering || newVehicle.trim() === ""}
-              className="w-full sm:w-auto min-h-[44px] px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
-            >
-              {registering ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
-              Register
-            </button>
-          </form>
+      {error && <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border bg-red-500/10 text-red-700 border-red-400/40"><AlertCircle size={16} className="mt-0.5" />{error}</div>}
+      {!data && !error && <div className="h-32 rounded-2xl bg-white/50 animate-pulse" />}
 
-          <div>
-            <p className="text-xs font-semibold text-slate-700 mb-2">Registered vehicles ({vehicles.length})</p>
-            {loading ? (
-              <div className="h-8 w-40 rounded bg-white/60 animate-pulse" />
-            ) : vehicles.length === 0 ? (
-              <p className="text-xs text-slate-500">No vehicles registered yet.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {vehicles.map((v) => (
-                  <span
-                    key={v.id}
-                    className="px-3 py-1 rounded-full text-xs font-semibold bg-white/70 border border-white/70 text-slate-700"
-                  >
-                    {v.vehicleNumber}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ---------------- Daily check ---------------- */}
-        <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
-          <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-            <ClipboardCheck size={18} className="text-blue-600" /> Daily Gali Check
-          </h2>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Select vehicle</label>
-            <select
-              value={vehicleId}
-              onChange={(e) => {
-                setVehicleId(e.target.value);
-                setCheckNotice(null);
-              }}
-              className={inputClass}
-            >
-              <option value="">-- Select a registered vehicle --</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicleNumber}
-                </option>
-              ))}
-            </select>
+      {data && (
+        <>
+          {/* ---- the 3 shift blocks ---- */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+            {data.shifts.map((s) => {
+              const b = badge(s);
+              const open = s.status === "RUNNING";
+              const done = data.readings.filter((r) => r.shiftNo === s.shiftNo).length;
+              return (
+                <div key={s.shiftNo} className={`${glass} rounded-2xl p-4 space-y-2 ${open ? "ring-2 ring-emerald-400/60" : "opacity-75"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{s.label}</p>
+                      <p className="text-xs text-slate-600">{s.startTime} - {s.endTime}</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${b.cls}`}><b.Icon size={12} />{b.text}</span>
+                  </div>
+                  <p className="text-xs text-slate-600">{done}/{data.tanks.length} tanks recorded</p>
+                  {s.status === "CLOSED" && <p className="text-[11px] text-slate-500 flex items-center gap-1"><Lock size={11} /> Time is over. If data is missing, ask the manager to add it.</p>}
+                  {s.status === "UPCOMING" && <p className="text-[11px] text-slate-500 flex items-center gap-1"><Lock size={11} /> Opens at {s.startTime}.</p>}
+                </div>
+              );
+            })}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                ES <span className="font-normal text-slate-500">(range {GALI_RANGES.ES.min} - {GALI_RANGES.ES.max})</span>
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                value={es}
-                onChange={(e) => {
-                  setEs(e.target.value);
-                  setCheckNotice(null);
-                }}
-                placeholder="Enter ES value"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                PH <span className="font-normal text-slate-500">(range {GALI_RANGES.PH.min} - {GALI_RANGES.PH.max})</span>
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                value={ph}
-                onChange={(e) => {
-                  setPh(e.target.value);
-                  setCheckNotice(null);
-                }}
-                placeholder="Enter PH value"
-                className={inputClass}
-              />
-            </div>
-          </div>
+          {data.tanks.length === 0 && <section className={`${glass} rounded-2xl p-6 text-sm text-slate-600`}>No tanks have been set up yet. Ask the manager to add tanks and parameters.</section>}
 
-          {/* Automatic message */}
-          {!result ? (
-            <div className="rounded-xl border border-white/70 bg-white/50 px-4 py-3 text-sm text-slate-500">
-              Enter both ES and PH values to see the result.
-            </div>
-          ) : result.approved ? (
-            <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-4 py-3">
-              <p className="text-base font-bold text-emerald-700 flex items-center gap-2">
-                <CheckCircle2 size={18} /> Approval
-              </p>
-              <p className="text-xs text-emerald-700/80 mt-0.5">ES and PH are inside the allowed range.</p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-red-400/50 bg-red-500/10 px-4 py-3">
-              <p className="text-base font-bold text-red-700 flex items-center gap-2">
-                <XCircle size={18} /> Reject
-              </p>
-              <p className="text-xs text-red-700/80 mt-0.5">
-                {[
-                  !result.esOk && `ES is outside ${GALI_RANGES.ES.min} - ${GALI_RANGES.ES.max}`,
-                  !result.phOk && `PH is outside ${GALI_RANGES.PH.min} - ${GALI_RANGES.PH.max}`,
-                ]
-                  .filter(Boolean)
-                  .join(" | ")}
-              </p>
-            </div>
+          {/* ---- entry form (only while MY shift is running) ---- */}
+          {data.tanks.length > 0 && !activeShift && (
+            <section className={`${glass} rounded-2xl p-6 text-sm text-slate-600 flex items-start gap-2`}>
+              <Lock size={16} className="mt-0.5 shrink-0" />
+              <span>No shift is open right now. You can enter data only while a shift is running.</span>
+            </section>
           )}
 
-          {renderNotice(checkNotice)}
+          {data.tanks.length > 0 && activeShift && (
+            <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
+              <h2 className="text-base font-semibold text-slate-800">{activeShift.label} - enter readings</h2>
+              <div className="sm:w-1/2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Tank</label>
+                <select className={inputClass} value={tankId} onChange={(e) => { setTankId(e.target.value); setNotice(null); }}>
+                  {data.tanks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
 
-          {/* Approval / Reject buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => submitCheck("APPROVED")}
-              disabled={!canApprove}
-              className="min-h-[46px] rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
-            >
-              {submitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              Approval
-            </button>
-            <button
-              type="button"
-              onClick={() => submitCheck("REJECTED")}
-              disabled={!canReject}
-              className="min-h-[46px] rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-semibold shadow-lg shadow-red-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
-            >
-              {submitting ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
-              Reject
-            </button>
-          </div>
-        </section>
-      </div>
+              {existing && <p className="text-xs text-emerald-700 bg-emerald-500/10 border border-emerald-400/40 rounded-xl px-3 py-2">Already recorded by {existing.recordedBy}. Saving again will correct it.</p>}
 
-      {/* ---------------- Recent checks ---------------- */}
-      <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6`}>
-        <h2 className="text-base font-semibold text-slate-800 mb-3">Recent Gali Checks</h2>
-        {loading ? (
-          <div className="h-16 rounded bg-white/50 animate-pulse" />
-        ) : checks.length === 0 ? (
-          <p className="text-sm text-slate-500">No checks recorded yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead>
-                <tr className="text-left text-xs text-slate-600 border-b border-white/60">
-                  <th className="py-2 pr-3 font-semibold">Date / Time</th>
-                  <th className="py-2 pr-3 font-semibold">Vehicle</th>
-                  <th className="py-2 pr-3 font-semibold">ES</th>
-                  <th className="py-2 pr-3 font-semibold">PH</th>
-                  <th className="py-2 pr-3 font-semibold">Decision</th>
-                  <th className="py-2 font-semibold">By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {checks.map((c) => (
-                  <tr key={c.id} className="border-b border-white/40 last:border-0 text-slate-700">
-                    <td className="py-2 pr-3 whitespace-nowrap">{new Date(c.createdAt).toLocaleString()}</td>
-                    <td className="py-2 pr-3 font-semibold">{c.vehicle.vehicleNumber}</td>
-                    <td className="py-2 pr-3">{c.esValue}</td>
-                    <td className="py-2 pr-3">{c.phValue}</td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                          c.decision === "APPROVED"
-                            ? "bg-emerald-400/20 text-emerald-700 border-emerald-400/40"
-                            : "bg-red-400/20 text-red-700 border-red-400/40"
-                        }`}
-                      >
-                        {c.decision === "APPROVED" ? "Approved" : "Rejected"}
-                      </span>
-                    </td>
-                    <td className="py-2">{c.checkedBy}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+              {tank && tank.parameters.length === 0 ? (
+                <p className="text-sm text-slate-500">This tank has no parameters yet. Ask the manager to add them.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {tank?.parameters.map((p) => {
+                    const n = Number(values[p.id]);
+                    const bad = values[p.id]?.trim() !== "" && Number.isFinite(n) && outOfRange(p, n);
+                    return (
+                      <div key={p.id}>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                          {p.name}{p.unit ? ` (${p.unit})` : ""}
+                          {(p.min !== null || p.max !== null) && <span className="font-normal text-slate-500"> range {p.min ?? "-"} - {p.max ?? "-"}</span>}
+                        </label>
+                        <input type="number" inputMode="decimal" step="any" className={`${inputClass} ${bad ? "border-red-400 ring-2 ring-red-400/30" : ""}`}
+                          value={values[p.id] ?? ""} onChange={(e) => { setValues({ ...values, [p.id]: e.target.value }); setNotice(null); }} />
+                        {bad && <p className="text-[11px] text-red-600 mt-1">Outside the allowed range</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="sm:w-1/2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type your name to submit <span className="text-red-600">*</span></label>
+                <input type="text" className={inputClass} value={signName} onChange={(e) => { setSignName(e.target.value); setNotice(null); }} placeholder="Your full name" autoComplete="off" />
+              </div>
+
+              {notice && (
+                <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border ${notice.type === "success" ? "bg-emerald-500/10 text-emerald-700 border-emerald-400/40" : "bg-red-500/10 text-red-700 border-red-400/40"}`}>
+                  {notice.type === "success" ? <CheckCircle2 size={16} className="mt-0.5" /> : <AlertCircle size={16} className="mt-0.5" />}{notice.text}
+                </div>
+              )}
+
+              <button type="button" onClick={save} disabled={!canSubmit}
+                className="min-h-[46px] px-6 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white text-sm font-semibold shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Submit reading
+              </button>
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 }
