@@ -17,6 +17,7 @@ import {
   LogOut, 
   Sliders,
   Upload,
+  Droplets,
   X, 
   Menu, 
   Bell 
@@ -90,6 +91,7 @@ export default function ManagerLayout({
     { name: "Parameter Management", href: "/dashboard/manager/mappings", icon: TestTube2 },
     { name: "Parameter Ranges", href: "/dashboard/manager/ranges", icon: Sliders },
     { name: "Parameter Dosages", href: "/dashboard/manager/parameter-dosages", icon: FlaskConical },
+    { name: "Private Samples", href: "/dashboard/manager/private-samples", icon: Droplets },
     { name: "Breakage Monitoring", href: "/dashboard/manager/breakages", icon: ShieldAlert },
   ];
 

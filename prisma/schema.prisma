@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,13 +8,12 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-
-
 enum Role {
   ADMIN              // Super Admin = WR Boss
   MANAGER            // Lab Head
   INVENTORY_MANAGER  // Stock Keeper (Inventory)
   TECHNICIAN         // Lab Assistants
+  PLANT_OPERATOR     // Plant Operator (Gali / Tank Operator)
 }
 
 enum UserStatus {
@@ -86,11 +84,12 @@ model ChemicalRecipe {
 
 // 1. Global Test Parameters Master (Test Management - Name & Unit)
 model TestParameter {
-  id        String   @id @default(uuid())
-  name      String   @unique // e.g. "pH", "COD", "Ammonia"
-  unit      String?  // e.g. mg/L, pH, NTU, drops
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String                  @id @default(uuid())
+  name          String                  @unique // e.g. "pH", "COD", "Ammonia"
+  unit          String?                 // e.g. mg/L, pH, NTU, drops
+  privatePrices PrivateParameterPrice[] // Price used for Private Samples billing
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 }
 
 // 2. Chemical Master Catalog & Stock Inventory
@@ -108,13 +107,13 @@ model ChemicalMaster {
 
 // 3. Category Table (e.g. "Daily Testing", "Weekly Testing")
 model TestCategory {
-  id          String       @id @default(uuid())
-  name        String       @unique // e.g. "Daily Testing"
-  code        String?      @unique // Unique code derived from category name (e.g. "DT")
-  description String?      
-  types       TestType[]   
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id          String     @id @default(uuid())
+  name        String     @unique // e.g. "Daily Testing"
+  code        String?    @unique // Unique code derived from category name (e.g. "DT")
+  description String?
+  types       TestType[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 }
 
 // 4. Type / Unit Table linked to Category (e.g. "Balance Tank", "Raw Water Line")
@@ -122,11 +121,11 @@ model TestType {
   id          String                    @id @default(uuid())
   categoryId  String
   category    TestCategory              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  
+
   name        String                    // e.g. "Balance Tank"
   code        String?                   @unique // Unique code derived from unit name (e.g. "BT")
-  description String?                   
-  ranges      TankParameterConfig[]     
+  description String?
+  ranges      TankParameterConfig[]
   dosages     ParameterChemicalDosage[] // Relation to chemical dosages
   records     TestRecord[]              // Relation to test records
   createdAt   DateTime                  @default(now())
@@ -137,18 +136,18 @@ model TestType {
 
 // 5. Tank/Unit-wise Parameter Ranges & Standards
 model TankParameterConfig {
-  id            String       @id @default(uuid())
-  typeId        String       // Links to TestType (e.g. Balancing Tank, Disinfection Tank)
-  type          TestType     @relation(fields: [typeId], references: [id], onDelete: Cascade)
-  
-  parameterName String       // e.g. "pH", "BOD", "COD"
-  unit          String?      // e.g. "mg/L", "pH"
-  standardMin   Float?       // e.g. 6.5
-  standardMax   Float?       // e.g. 8.0
-  rangeText     String?      // For inequality rules like "< 30" or microorganism names
-  
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id            String   @id @default(uuid())
+  typeId        String   // Links to TestType (e.g. Balancing Tank, Disinfection Tank)
+  type          TestType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+
+  parameterName String   // e.g. "pH", "BOD", "COD"
+  unit          String?  // e.g. "mg/L", "pH"
+  standardMin   Float?   // e.g. 6.5
+  standardMax   Float?   // e.g. 8.0
+  rangeText     String?  // For inequality rules like "< 30" or microorganism names
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([typeId, parameterName])
 }
@@ -158,22 +157,21 @@ model ParameterChemicalDosage {
   id            String         @id @default(uuid())
   typeId        String         // Links to TestType (Unit / Tank / Process Stage)
   type          TestType       @relation(fields: [typeId], references: [id], onDelete: Cascade)
-  
+
   parameterName String         // e.g. "pH", "Turbidity", "COD"
-  
+
   chemicalId    String         // Links to ChemicalMaster Catalog
   chemical      ChemicalMaster @relation(fields: [chemicalId], references: [id], onDelete: Cascade)
-  
+
   amount        Float          // Required dosage amount e.g. 25.5
   unit          String         // e.g. "kg", "L", "g"
   description   String?        // Optional notes
-  
+
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   @@unique([typeId, parameterName, chemicalId])
 }
-// ---- Add this at the END of prisma/schema.prisma ----
 
 model FacilityProfile {
   id             String   @id @default("singleton")
@@ -185,4 +183,81 @@ model FacilityProfile {
   regionAddress  String
   privateContact String
   updatedAt      DateTime @updatedAt
+}
+
+model PasswordReset {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  otpHash       String
+  expiresAt     DateTime
+  attempts      Int      @default(0)
+  lastSentAt    DateTime
+  sendCount     Int      @default(1)
+  windowStartAt DateTime
+}
+
+model GaliVehicle {
+  id            String      @id @default(uuid())
+  vehicleNumber String      @unique
+  registeredBy  String
+  checks        GaliCheck[]
+  createdAt     DateTime    @default(now())
+}
+
+model GaliCheck {
+  id        String      @id @default(uuid())
+  vehicleId String
+  vehicle   GaliVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  esValue   Float
+  phValue   Float
+  inRange   Boolean     // true when both ES and PH were inside the allowed range
+  decision  String      // APPROVED or REJECTED
+  checkedBy String
+  createdAt DateTime    @default(now())
+
+  @@index([vehicleId])
+}
+
+// 7. Private Sample Billing - price per test parameter (Rs.), grouped by category / sub-category
+model PrivateCategory {
+  id            String                  @id @default(uuid())
+  name          String                  @unique // e.g. "Potable Water"
+  subCategories PrivateSubCategory[]
+  prices        PrivateParameterPrice[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+}
+
+model PrivateSubCategory {
+  id         String                  @id @default(uuid())
+  categoryId String
+  category   PrivateCategory         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name       String                  // e.g. "Physical/Chemical Requirement"
+  prices     PrivateParameterPrice[]
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@unique([categoryId, name])
+}
+
+model PrivateParameterPrice {
+  id            String              @id @default(uuid())
+  parameterId   String
+  parameter     TestParameter       @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      PrivateCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  subCategoryId String?
+  subCategory   PrivateSubCategory? @relation(fields: [subCategoryId], references: [id], onDelete: SetNull)
+
+  price         Float               // Price per test in Rs. (without VAT)
+
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  // Same parameter can be priced in several sub-categories of one category,
+  // but only once per sub-category. (NULL sub-category duplicates are blocked in the API,
+  // because Postgres treats NULLs as distinct in unique indexes.)
+  // Billing counts a parameter once per category -> see lib/privateBilling.ts
+  @@unique([categoryId, subCategoryId, parameterId])
+  @@index([categoryId, parameterId])
 }
