@@ -35,16 +35,19 @@ type Notice = { type: "success" | "error"; text: string } | null;
 const toNum = (v: string | undefined) => (v === undefined || v.trim() === "" ? NaN : Number(v));
 
 // Safe JSON fetch: if the server sends an HTML error page instead of JSON, we say WHICH url failed
-async function getJson(url: string) {
+async function getJson<T>(url: string) {
   const res = await fetch(url, { cache: "no-store", credentials: "same-origin" });
   const text = await res.text();
-  let json: any;
+  let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
     throw new Error(`${url} returned ${res.status} (not JSON)`);
   }
-  return { res, json };
+  if (typeof json !== "object" || json === null) {
+    throw new Error(`${url} returned ${res.status} (invalid JSON)`);
+  }
+  return { res, json: json as { success?: boolean; error?: string; data?: T } };
 }
 
 // What to show in the "Recent checks" table for one record
@@ -75,21 +78,21 @@ export default function GaliPage() {
   const [checkNotice, setCheckNotice] = useState<Notice>(null);
 
   const loadVehicles = useCallback(async () => {
-    const { res, json } = await getJson("/api/plant-operator/gali/vehicles");
-    if (res.ok && json.success) setVehicles(json.data);
+    const { res, json } = await getJson<Vehicle[]>("/api/plant-operator/gali/vehicles");
+    if (res.ok && json.success) setVehicles(json.data ?? []);
     else throw new Error(json.error || `Vehicles failed (${res.status})`);
   }, []);
 
   const loadChecks = useCallback(async () => {
-    const { res, json } = await getJson("/api/plant-operator/gali/checks");
-    if (res.ok && json.success) setChecks(json.data);
+    const { res, json } = await getJson<CheckRow[]>("/api/plant-operator/gali/checks");
+    if (res.ok && json.success) setChecks(json.data ?? []);
     else throw new Error(json.error || `Checks failed (${res.status})`);
   }, []);
 
   // The parameters + ranges the Manager added (Plant Operator > Gali Operator > Parameters & Ranges)
   const loadParams = useCallback(async () => {
-    const { res, json } = await getJson("/api/plant-operator/gali/parameters");
-    if (res.ok && json.success) setParams(json.data);
+    const { res, json } = await getJson<GaliParam[]>("/api/plant-operator/gali/parameters");
+    if (res.ok && json.success) setParams(json.data ?? []);
     else throw new Error(json.error || `Parameters failed (${res.status})`);
   }, []);
 
@@ -126,8 +129,8 @@ export default function GaliPage() {
       setNewVehicle("");
       await loadVehicles();
       setVehicleId(json.data.id); // pick the new vehicle for the check
-    } catch (err: any) {
-      setRegisterNotice({ type: "error", text: err.message });
+    } catch (err: unknown) {
+      setRegisterNotice({ type: "error", text: err instanceof Error ? err.message : "Failed to register vehicle" });
     } finally {
       setRegistering(false);
     }
@@ -158,7 +161,10 @@ export default function GaliPage() {
         credentials: "same-origin",
         body: JSON.stringify({ vehicleId, values, decision }),
       });
-      const json = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
+      const json = await res.json().catch(() => ({ error: `Server error (${res.status})` })) as {
+        success?: boolean;
+        error?: string;
+      };
       if (!res.ok || !json.success) throw new Error(json.error || "Failed to save the check");
       const plate = vehicles.find((v) => v.id === vehicleId)?.vehicleNumber ?? "Vehicle";
       setCheckNotice({
@@ -167,8 +173,8 @@ export default function GaliPage() {
       });
       setValues({});
       await loadChecks();
-    } catch (err: any) {
-      setCheckNotice({ type: "error", text: err.message });
+    } catch (err: unknown) {
+      setCheckNotice({ type: "error", text: err instanceof Error ? err.message : "Failed to save the check" });
     } finally {
       setSubmitting(false);
     }
