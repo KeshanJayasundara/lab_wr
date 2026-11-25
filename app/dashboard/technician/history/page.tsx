@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, Search, CheckCircle2, Clock, XCircle, Filter, Edit3, Lock, X, AlertCircle, Loader2, ChevronDown, ShieldCheck, Layers, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -390,7 +391,7 @@ export default function TechnicianHistoryPage() {
                       return (
                         <div key={r.id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                           <div className="min-w-0 font-mono text-xs text-slate-800 break-words">
-                            <strong>{r.parameter}:</strong> {r.value} {r.unit}
+                            <strong>{formatChem(r.parameter)}:</strong> {r.value} {formatUnit(r.unit)}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <StatusBadge status={r.status} />
@@ -477,7 +478,7 @@ export default function TechnicianHistoryPage() {
                   <label className="text-xs font-semibold text-slate-700">Parameter</label>
                   <input
                     type="text"
-                    value={editingRecord.parameter}
+                    value={formatChem(editingRecord.parameter)}
                     disabled
                     className="w-full px-3.5 py-3 sm:py-2.5 rounded-2xl border border-white/50 bg-white/30 backdrop-blur-xl text-base sm:text-sm font-bold text-slate-500 cursor-not-allowed"
                   />
@@ -485,7 +486,7 @@ export default function TechnicianHistoryPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-700">Unit</label>
-                  <input type="text" value={editingRecord.unit} disabled className="w-full px-3.5 py-3 sm:py-2.5 rounded-2xl border border-white/50 bg-white/30 backdrop-blur-xl text-base sm:text-sm font-bold text-slate-500 cursor-not-allowed" />
+                  <input type="text" value={formatUnit(editingRecord.unit)} disabled className="w-full px-3.5 py-3 sm:py-2.5 rounded-2xl border border-white/50 bg-white/30 backdrop-blur-xl text-base sm:text-sm font-bold text-slate-500 cursor-not-allowed" />
                 </div>
 
                 <div className="space-y-1.5">

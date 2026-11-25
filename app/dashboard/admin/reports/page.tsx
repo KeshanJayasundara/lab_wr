@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import React, { useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, Download, Filter, Calendar, CheckCircle2, AlertTriangle, XCircle, Search, X, ChevronDown, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -384,7 +385,7 @@ export default function AdminReportsPage() {
                         <td className="py-3 px-4">{row.category}</td>
                         <td className="py-3 px-4">{row.unit}</td>
                         <td className="py-3 px-4 font-bold text-slate-900">
-                          {row.parameter} {row.measureUnit && <span className="font-normal text-slate-500">({row.measureUnit})</span>}
+                          {formatChem(row.parameter)} {row.measureUnit && <span className="font-normal text-slate-500">({formatUnit(row.measureUnit)})</span>}
                         </td>
                         <td className="py-3 px-4 text-slate-600">{row.standard}</td>
                         <td className="py-3 px-4 text-right">{row.tests}</td>
@@ -404,7 +405,7 @@ export default function AdminReportsPage() {
                   <div key={idx} className="bg-white/50 backdrop-blur-xl border border-white/70 rounded-2xl p-3.5 space-y-2.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 break-words">{row.parameter}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 break-words">{formatChem(row.parameter)}</h3>
                         <p className="text-[11px] text-slate-500">{row.category} · {row.unit}</p>
                       </div>
                       <span className="shrink-0"><StatusBadge status={row.status} /></span>
@@ -416,7 +417,7 @@ export default function AdminReportsPage() {
                       </div>
                       <div className="min-w-0">
                         <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Avg ({row.tests} tests)</dt>
-                        <dd className="mt-0.5 font-semibold text-slate-800">{fmt(row.avg)} {row.measureUnit}</dd>
+                        <dd className="mt-0.5 font-semibold text-slate-800">{fmt(row.avg)} {formatUnit(row.measureUnit)}</dd>
                       </div>
                       <div>
                         <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Min</dt>

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { CheckSquare, CheckCircle2, Eye, Check, AlertTriangle, User, Loader2, X, AlertCircle, ShieldCheck, Edit3, Trash2, Clock, Lock, ChevronDown, Layers, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -185,7 +186,7 @@ export default function ManagerVerifyPage() {
           date: new Date(r.createdAt).toLocaleString(),
           createdAt: r.createdAt,
           status: r.status,
-          results: `${r.parameter}: ${r.value} ${r.unit}`,
+          results: `${formatChem(r.parameter)}: ${r.value} ${formatUnit(r.unit)}`,
           parameter: r.parameter,
           value: r.value,
           unit: r.unit,
@@ -645,7 +646,7 @@ export default function ManagerVerifyPage() {
                         {g.records.map((r) => (
                           <div key={r.id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                             <div className="min-w-0 font-mono text-xs text-slate-800 break-words">
-                              <strong>{r.parameter}:</strong> {r.value} {r.unit}
+                              <strong>{formatChem(r.parameter)}:</strong> {r.value} {formatUnit(r.unit)}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold backdrop-blur-xl border ${statusClass(r.status)}`}>
@@ -781,7 +782,7 @@ export default function ManagerVerifyPage() {
                     {viewingSet.records.map((r) => (
                       <div key={r.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
                         <span className="font-mono font-bold text-indigo-700 break-words min-w-0">
-                          {r.parameter}: {r.value} {r.unit}
+                          {formatChem(r.parameter)}: {r.value} {formatUnit(r.unit)}
                         </span>
                         <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusClass(r.status)}`}>
                           {r.status}
@@ -832,7 +833,7 @@ export default function ManagerVerifyPage() {
                   <label className="text-xs font-semibold text-slate-700">Parameter</label>
                   <input
                     type="text"
-                    value={editingRecord.parameter}
+                    value={formatChem(editingRecord.parameter)}
                     disabled
                     className="w-full px-3.5 py-3 sm:py-2.5 rounded-2xl border border-white/50 bg-white/30 backdrop-blur-xl text-base sm:text-sm font-bold text-slate-500 cursor-not-allowed"
                   />
@@ -840,7 +841,7 @@ export default function ManagerVerifyPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-700">Unit</label>
-                  <input type="text" value={editingRecord.unit} disabled className="w-full px-3.5 py-3 sm:py-2.5 rounded-2xl border border-white/50 bg-white/30 backdrop-blur-xl text-base sm:text-sm font-bold text-slate-500 cursor-not-allowed" />
+                  <input type="text" value={formatUnit(editingRecord.unit)} disabled className="w-full px-3.5 py-3 sm:py-2.5 rounded-2xl border border-white/50 bg-white/30 backdrop-blur-xl text-base sm:text-sm font-bold text-slate-500 cursor-not-allowed" />
                 </div>
 
                 <div className="space-y-1.5">

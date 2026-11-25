@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import React, { useEffect, useRef, useState } from "react";
 import { FlaskConical, Send, RefreshCw, ChevronDown, Check, Sliders, CheckCircle2, AlertCircle, X, TestTube2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -350,10 +351,10 @@ export default function WaterQualityTestingPage() {
                       <div className="flex justify-between items-start gap-2">
                         <div>
                           <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                            <Sliders size={14} className="text-indigo-600" /> {param.parameterName}
+                            <Sliders size={14} className="text-indigo-600" /> {formatChem(param.parameterName)}
                           </h4>
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            Standard: {param.rangeText ? param.rangeText : `${param.standardMin ?? "?"} - ${param.standardMax ?? "?"} ${param.unit || ""}`}
+                            Standard: {param.rangeText ? param.rangeText : `${param.standardMin ?? "?"} - ${param.standardMax ?? "?"} ${formatUnit(param.unit)}`}
                           </p>
                         </div>
                         <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border backdrop-blur-xl whitespace-nowrap ${status.color}`}>
@@ -371,7 +372,7 @@ export default function WaterQualityTestingPage() {
                           onChange={(e) => handleValueChange(param.parameterName, e.target.value)}
                           className={glassInputSm}
                         />
-                        <span className="text-xs font-bold text-slate-600 shrink-0 px-2">{param.unit || "mg/L"}</span>
+                        <span className="text-xs font-bold text-slate-600 shrink-0 px-2">{formatUnit(param.unit || "mg/L")}</span>
                       </div>
                     </div>
                   );

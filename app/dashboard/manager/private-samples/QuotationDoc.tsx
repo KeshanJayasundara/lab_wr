@@ -6,6 +6,7 @@
  * The Senior Chemist name / designation is NOT printed: that space is left empty for the office seal.
  */
 
+import { formatChem } from "@/lib/chemFormat";
 import React, { forwardRef } from "react";
 import { QUOTATION as Q } from "@/lib/quotationConfig";
 
@@ -121,7 +122,7 @@ const QuotationDoc = forwardRef<HTMLDivElement, { data: QuotationData }>(functio
                   Analysis fee for {d.categoryName} sample
                 </td>
               )}
-              <td style={{ ...cell, borderTop: i === 0 ? "1px solid #000" : "none", borderBottom: "none" }}>{l.name}</td>
+              <td style={{ ...cell, borderTop: i === 0 ? "1px solid #000" : "none", borderBottom: "none" }}>{formatChem(l.name)}</td>
               {i === 0 && (
                 <td rowSpan={n + 4} style={{ ...cell, textAlign: "center" }}>
                   {String(d.samples).padStart(2, "0")}

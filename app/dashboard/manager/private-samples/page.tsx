@@ -19,7 +19,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, Check, Tag, Layers, FolderPlus, Save, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatUnit } from "@/lib/chemFormat";
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import { uniqueByParameter, billableTotal } from "@/lib/privateBilling";
 import BillWizard from "./BillWizard";
 
@@ -765,7 +765,7 @@ export default function PrivateSamplesPage() {
                             <div className="flex items-start gap-3 min-w-0 flex-1">
                               <span className="w-9 text-[11px] font-semibold text-slate-400 flex-shrink-0 pt-0.5 sm:pt-0">{g.id ? `${gi + 1}.${ri + 1}` : ri + 1}</span>
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold text-slate-800 break-words sm:truncate" title={r.parameterName}>{r.parameterName}</p>
+                                <p className="text-sm font-semibold text-slate-800 break-words sm:truncate" title={formatChem(r.parameterName)}>{formatChem(r.parameterName)}</p>
                                 {r.unit && <p className="text-[11px] text-slate-500">{formatUnit(r.unit)}</p>}
                                 {(() => {
                                   const others = catRows.filter((x) => x.parameterId === r.parameterId && x.id !== r.id);
