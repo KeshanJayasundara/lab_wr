@@ -1,4 +1,3 @@
-// >>> SAVE AS: lib/plantConfig.ts   (REPLACE the whole file) - delete this line after saving <<<
 import { prisma } from "@/lib/prisma";
 import { GALI_RANGES } from "@/lib/galiRanges";
 
@@ -42,6 +41,23 @@ export async function getGaliRanges() {
     ES: es ? { min: es.min, max: es.max } : { ...GALI_RANGES.ES },
     PH: ph ? { min: ph.min, max: ph.max } : { ...GALI_RANGES.PH },
   };
+}
+
+// Every Gali parameter + range the Manager has set. ES and PH are created with the defaults on first use.
+export async function getGaliParameters() {
+  if ((await prisma.galiParameter.count()) === 0) {
+    await prisma.galiParameter.createMany({
+      data: [
+        { name: "ES", min: GALI_RANGES.ES.min, max: GALI_RANGES.ES.max },
+        { name: "PH", unit: "pH", min: GALI_RANGES.PH.min, max: GALI_RANGES.PH.max },
+      ],
+      skipDuplicates: true,
+    });
+  }
+  return prisma.galiParameter.findMany({
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true, unit: true, min: true, max: true },
+  });
 }
 
 type ShiftDef = { shiftNo: number; startTime: string; endTime: string };
@@ -91,6 +107,23 @@ export function shiftBoard(shifts: ShiftDef[]) {
   });
   return { date, statuses };
 }
+
+// Has the shift that belongs to `date` already finished (Sri Lanka time)?
+// A night shift (22:00-06:00) belongs to the day it started on, so on that date it only ends the next morning.
+export function shiftEnded(shifts: ShiftDef[], date: string, shiftNo: number) {
+  const s = shifts.find((x) => x.shiftNo === shiftNo);
+  if (!s) return false;
+  const now = colomboNow();
+  const daysAgo = Math.round((Date.parse(`${now.today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86400000);
+  if (daysAgo < 0) return false; // a future date
+  const a = toMin(s.startTime);
+  let b = toMin(s.endTime);
+  if (b <= a) b += 1440;
+  return now.minutes + daysAgo * 1440 >= b;
+}
+
+// Is the whole day over (Sri Lanka time)? Today is still running, so only earlier dates count.
+export const dayEnded = (date: string) => date < colomboToday();
 
 // "  John   Silva " -> "john silva" (for comparing a typed name with the account name)
 export const normName = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();

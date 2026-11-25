@@ -15,3 +15,20 @@ export function evaluateGali(es: number, ph: number, ranges: GaliRangeSet = GALI
   const phOk = Number.isFinite(ph) && ph >= ranges.PH.min && ph <= ranges.PH.max;
   return { esOk, phOk, approved: esOk && phOk };
 }
+
+// ---------------------------------------------------------------------------
+// Manager-defined parameters (Manager > Plant Operator > Gali Operator > Parameters & Ranges)
+// ---------------------------------------------------------------------------
+export type GaliParam = { id: string; name: string; unit: string | null; min: number; max: number };
+
+export type GaliParamResult = GaliParam & { value: number; ok: boolean };
+
+// Checks every parameter against its own range. Approved only when ALL of them are inside the range.
+export function evaluateGaliParams(params: GaliParam[], values: Record<string, number>) {
+  const results: GaliParamResult[] = params.map((p) => {
+    const value = values[p.id];
+    const ok = Number.isFinite(value) && value >= p.min && value <= p.max;
+    return { ...p, value, ok };
+  });
+  return { results, approved: results.length > 0 && results.every((r) => r.ok) };
+}

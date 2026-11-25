@@ -2,23 +2,27 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Truck, PlusCircle, CheckCircle2, XCircle, Loader2, ClipboardCheck, AlertCircle } from "lucide-react";
-import { GALI_RANGES, evaluateGali, type GaliRangeSet } from "@/lib/galiRanges";
+import { evaluateGaliParams, type GaliParam } from "@/lib/galiRanges";
 import GaliReport from "@/components/plant-operator/GaliReport";
+import GlassSelect from "@/components/plant-operator/GlassSelect";
 
 // Shared "frosted glass" look (same as the other pages)
 const glass =
   "bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(15,23,42,0.10)] ring-1 ring-inset ring-white/40";
 
 const inputClass =
-  "w-full h-11 rounded-xl border border-white/70 bg-white/70 px-3 text-sm text-slate-800 " +
+  "w-full h-12 sm:h-11 rounded-xl border border-white/70 bg-white/70 px-3 text-base sm:text-sm text-slate-800 " +
   "placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40";
 
 type Vehicle = { id: string; vehicleNumber: string };
+
+type CheckValue = { name: string; unit?: string | null; min: number; max: number; value: number; ok: boolean };
 
 type CheckRow = {
   id: string;
   esValue: number;
   phValue: number;
+  values: CheckValue[] | null; // every parameter that was checked (older records only have ES / PH)
   inRange: boolean;
   decision: "APPROVED" | "REJECTED";
   checkedBy: string;
@@ -28,7 +32,7 @@ type CheckRow = {
 
 type Notice = { type: "success" | "error"; text: string } | null;
 
-const toNum = (v: string) => (v.trim() === "" ? NaN : Number(v));
+const toNum = (v: string | undefined) => (v === undefined || v.trim() === "" ? NaN : Number(v));
 
 // Safe JSON fetch: if the server sends an HTML error page instead of JSON, we say WHICH url failed
 async function getJson(url: string) {
@@ -43,8 +47,17 @@ async function getJson(url: string) {
   return { res, json };
 }
 
+// What to show in the "Recent checks" table for one record
+function checkedValues(c: CheckRow): CheckValue[] {
+  if (Array.isArray(c.values) && c.values.length > 0) return c.values;
+  return [
+    { name: "ES", min: 0, max: 0, value: c.esValue, ok: c.inRange },
+    { name: "PH", min: 0, max: 0, value: c.phValue, ok: c.inRange },
+  ];
+}
+
 export default function GaliPage() {
-  const [ranges, setRanges] = useState<GaliRangeSet>(GALI_RANGES);
+  const [params, setParams] = useState<GaliParam[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [checks, setChecks] = useState<CheckRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,8 +70,7 @@ export default function GaliPage() {
 
   // Daily check
   const [vehicleId, setVehicleId] = useState("");
-  const [es, setEs] = useState("");
-  const [ph, setPh] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({}); // parameterId -> typed value
   const [submitting, setSubmitting] = useState(false);
   const [checkNotice, setCheckNotice] = useState<Notice>(null);
 
@@ -74,16 +86,17 @@ export default function GaliPage() {
     else throw new Error(json.error || `Checks failed (${res.status})`);
   }, []);
 
-  // Limits set by the Manager (falls back to the defaults if this fails)
-  const loadRanges = useCallback(async () => {
-    const { res, json } = await getJson("/api/plant-operator/gali/ranges");
-    if (res.ok && json.success) setRanges(json.data);
+  // The parameters + ranges the Manager added (Plant Operator > Gali Operator > Parameters & Ranges)
+  const loadParams = useCallback(async () => {
+    const { res, json } = await getJson("/api/plant-operator/gali/parameters");
+    if (res.ok && json.success) setParams(json.data);
+    else throw new Error(json.error || `Parameters failed (${res.status})`);
   }, []);
 
   useEffect(() => {
     (async () => {
-      // Each one on its own, so one failing does not block the other
-      const results = await Promise.allSettled([loadVehicles(), loadChecks(), loadRanges()]);
+      // Each one on its own, so one failing does not block the others
+      const results = await Promise.allSettled([loadVehicles(), loadChecks(), loadParams()]);
       const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed.length > 0) {
         const msg = failed.map((f) => (f.reason instanceof Error ? f.reason.message : String(f.reason))).join(" | ");
@@ -92,7 +105,7 @@ export default function GaliPage() {
       }
       setLoading(false);
     })();
-  }, [loadVehicles, loadChecks, loadRanges]);
+  }, [loadVehicles, loadChecks, loadParams]);
 
   // ---- Register a vehicle ----
   const registerVehicle = async (e: React.FormEvent) => {
@@ -120,14 +133,17 @@ export default function GaliPage() {
     }
   };
 
-  // ---- Auto result for the ES / PH values ----
-  const esNum = toNum(es);
-  const phNum = toNum(ph);
-  const bothFilled = !Number.isNaN(esNum) && !Number.isNaN(phNum);
-  const result = useMemo(() => (bothFilled ? evaluateGali(esNum, phNum, ranges) : null), [bothFilled, esNum, phNum, ranges]);
+  // ---- Auto result for the typed values (all Manager parameters) ----
+  const numeric = useMemo(() => {
+    const out: Record<string, number> = {};
+    params.forEach((p) => (out[p.id] = toNum(values[p.id])));
+    return out;
+  }, [params, values]);
+  const allFilled = params.length > 0 && params.every((p) => !Number.isNaN(numeric[p.id]));
+  const result = useMemo(() => (allFilled ? evaluateGaliParams(params, numeric) : null), [allFilled, params, numeric]);
 
   const canReject = !!vehicleId && !!result && !submitting;
-  // Approval is only possible when BOTH values are inside the range
+  // Approval is only possible when EVERY value is inside its range
   const canApprove = canReject && !!result?.approved;
 
   const submitCheck = async (decision: "APPROVED" | "REJECTED") => {
@@ -140,7 +156,7 @@ export default function GaliPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ vehicleId, es, ph, decision }),
+        body: JSON.stringify({ vehicleId, values, decision }),
       });
       const json = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
       if (!res.ok || !json.success) throw new Error(json.error || "Failed to save the check");
@@ -149,8 +165,7 @@ export default function GaliPage() {
         type: "success",
         text: decision === "APPROVED" ? `${plate} approved.` : `${plate} rejected.`,
       });
-      setEs("");
-      setPh("");
+      setValues({});
       await loadChecks();
     } catch (err: any) {
       setCheckNotice({ type: "error", text: err.message });
@@ -176,6 +191,8 @@ export default function GaliPage() {
         <span>{notice.text}</span>
       </div>
     ) : null;
+
+  const vehicleOptions = useMemo(() => vehicles.map((v) => ({ id: v.id, label: v.vehicleNumber })), [vehicles]);
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
@@ -254,71 +271,72 @@ export default function GaliPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Select vehicle</label>
-            <select
+            <GlassSelect
+              options={vehicleOptions}
               value={vehicleId}
-              onChange={(e) => {
-                setVehicleId(e.target.value);
+              onChange={(id) => {
+                setVehicleId(id);
                 setCheckNotice(null);
               }}
-              className={inputClass}
-            >
-              <option value="">-- Select a registered vehicle --</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicleNumber}
-                </option>
-              ))}
-            </select>
+              placeholder="-- Select a registered vehicle --"
+              searchPlaceholder="Search vehicle number..."
+              icon={Truck}
+            />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                ES <span className="font-normal text-slate-500">(range {ranges.ES.min} - {ranges.ES.max})</span>
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                value={es}
-                onChange={(e) => {
-                  setEs(e.target.value);
-                  setCheckNotice(null);
-                }}
-                placeholder="Enter ES value"
-                className={inputClass}
-              />
+          {/* One box for every parameter the Manager added (name + range come from the Manager) */}
+          {loading ? (
+            <div className="h-16 rounded bg-white/50 animate-pulse" />
+          ) : params.length === 0 ? (
+            <div className="rounded-xl border border-white/70 bg-white/50 px-4 py-3 text-sm text-slate-500">
+              The Manager has not added any Gali parameters yet.
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                PH <span className="font-normal text-slate-500">(range {ranges.PH.min} - {ranges.PH.max})</span>
-              </label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                value={ph}
-                onChange={(e) => {
-                  setPh(e.target.value);
-                  setCheckNotice(null);
-                }}
-                placeholder="Enter PH value"
-                className={inputClass}
-              />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {params.map((p) => {
+                const n = numeric[p.id];
+                const filled = !Number.isNaN(n);
+                const outside = filled && (n < p.min || n > p.max);
+                return (
+                  <div key={p.id}>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      <span className="break-words">
+                        {p.name}
+                        {p.unit ? <span className="font-normal text-slate-500"> ({p.unit})</span> : null}
+                      </span>
+                      <span className="block sm:inline sm:ml-1 font-normal text-slate-500">
+                        (range {p.min} - {p.max})
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="any"
+                      value={values[p.id] ?? ""}
+                      onChange={(e) => {
+                        setValues((prev) => ({ ...prev, [p.id]: e.target.value }));
+                        setCheckNotice(null);
+                      }}
+                      placeholder={`Enter ${p.name} value`}
+                      className={`${inputClass} ${outside ? "!border-red-400 focus:!ring-red-400/40" : ""}`}
+                    />
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
 
           {/* Automatic message */}
           {!result ? (
             <div className="rounded-xl border border-white/70 bg-white/50 px-4 py-3 text-sm text-slate-500">
-              Enter both ES and PH values to see the result.
+              {params.length === 0 ? "No parameters to check." : "Enter all the values to see the result."}
             </div>
           ) : result.approved ? (
             <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-4 py-3">
               <p className="text-base font-bold text-emerald-700 flex items-center gap-2">
                 <CheckCircle2 size={18} /> Approval
               </p>
-              <p className="text-xs text-emerald-700/80 mt-0.5">ES and PH are inside the allowed range.</p>
+              <p className="text-xs text-emerald-700/80 mt-0.5">All values are inside the allowed range.</p>
             </div>
           ) : (
             <div className="rounded-xl border border-red-400/50 bg-red-500/10 px-4 py-3">
@@ -326,11 +344,9 @@ export default function GaliPage() {
                 <XCircle size={18} /> Reject
               </p>
               <p className="text-xs text-red-700/80 mt-0.5">
-                {[
-                  !result.esOk && `ES is outside ${ranges.ES.min} - ${ranges.ES.max}`,
-                  !result.phOk && `PH is outside ${ranges.PH.min} - ${ranges.PH.max}`,
-                ]
-                  .filter(Boolean)
+                {result.results
+                  .filter((r) => !r.ok)
+                  .map((r) => `${r.name} is outside ${r.min} - ${r.max}`)
                   .join(" | ")}
               </p>
             </div>
@@ -344,7 +360,7 @@ export default function GaliPage() {
               type="button"
               onClick={() => submitCheck("APPROVED")}
               disabled={!canApprove}
-              className="min-h-[46px] rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
+              className="min-h-[48px] rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               Approval
@@ -353,7 +369,7 @@ export default function GaliPage() {
               type="button"
               onClick={() => submitCheck("REJECTED")}
               disabled={!canReject}
-              className="min-h-[46px] rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-semibold shadow-lg shadow-red-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
+              className="min-h-[48px] rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-semibold shadow-lg shadow-red-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
               Reject
@@ -365,31 +381,82 @@ export default function GaliPage() {
       {/* ---------------- Recent checks ---------------- */}
       <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6`}>
         <h2 className="text-base font-semibold text-slate-800">Recent Gali Checks</h2>
-        <p className="text-xs text-slate-600 mb-3">Showing this month's checks only.</p>
+        <p className="text-xs text-slate-600 mb-3">Showing this month&apos;s checks only.</p>
         {loading ? (
           <div className="h-16 rounded bg-white/50 animate-pulse" />
         ) : checks.length === 0 ? (
           <p className="text-sm text-slate-500">No checks recorded this month.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* Phones: one card per check */}
+            <div className="md:hidden space-y-2.5">
+              {checks.map((c) => (
+                <div key={c.id} className="rounded-2xl border border-white/70 bg-white/50 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">{c.vehicle.vehicleNumber}</p>
+                      <p className="text-[11px] text-slate-500">{new Date(c.createdAt).toLocaleString()}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        c.decision === "APPROVED"
+                          ? "bg-emerald-400/20 text-emerald-700 border-emerald-400/40"
+                          : "bg-red-400/20 text-red-700 border-red-400/40"
+                      }`}
+                    >
+                      {c.decision === "APPROVED" ? "Approved" : "Rejected"}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {checkedValues(c).map((v) => (
+                      <span
+                        key={v.name}
+                        className={`px-2 py-0.5 rounded-lg text-xs font-semibold border ${
+                          v.ok ? "bg-white/70 border-white/70 text-slate-700" : "bg-red-400/15 border-red-400/40 text-red-700"
+                        }`}
+                      >
+                        {v.name}: {v.value}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-500">By {c.checkedBy}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Tablet / desktop: table */}
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="text-left text-xs text-slate-600 border-b border-white/60">
                   <th className="py-2 pr-3 font-semibold">Date / Time</th>
                   <th className="py-2 pr-3 font-semibold">Vehicle</th>
-                  <th className="py-2 pr-3 font-semibold">ES</th>
-                  <th className="py-2 pr-3 font-semibold">PH</th>
+                  <th className="py-2 pr-3 font-semibold">Values</th>
                   <th className="py-2 pr-3 font-semibold">Decision</th>
                   <th className="py-2 font-semibold">By</th>
                 </tr>
               </thead>
               <tbody>
                 {checks.map((c) => (
-                  <tr key={c.id} className="border-b border-white/40 last:border-0 text-slate-700">
+                  <tr key={c.id} className="border-b border-white/40 last:border-0 text-slate-700 align-top">
                     <td className="py-2 pr-3 whitespace-nowrap">{new Date(c.createdAt).toLocaleString()}</td>
                     <td className="py-2 pr-3 font-semibold">{c.vehicle.vehicleNumber}</td>
-                    <td className="py-2 pr-3">{c.esValue}</td>
-                    <td className="py-2 pr-3">{c.phValue}</td>
+                    <td className="py-2 pr-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {checkedValues(c).map((v) => (
+                          <span
+                            key={v.name}
+                            className={`px-2 py-0.5 rounded-lg text-xs font-semibold border whitespace-nowrap ${
+                              v.ok
+                                ? "bg-white/70 border-white/70 text-slate-700"
+                                : "bg-red-400/15 border-red-400/40 text-red-700"
+                            }`}
+                          >
+                            {v.name}: {v.value}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
                     <td className="py-2 pr-3">
                       <span
                         className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
@@ -406,7 +473,8 @@ export default function GaliPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </section>
 

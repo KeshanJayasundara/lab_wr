@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     const name = typeof b.name === "string" ? b.name.trim().replace(/\s+/g, " ") : "";
     if (!name || name.length > 60) return fail("Enter a tank name (max 60 characters)");
     if (await prisma.plantTank.findUnique({ where: { name } })) return fail("This tank already exists", 409);
+    // Reading type / check frequency are set per PARAMETER (see tank-parameters), not per tank
     return ok(await prisma.plantTank.create({ data: { name }, include: { parameters: true } }), 201);
   } catch (e) { console.error(e); return fail("Failed to add tank", 500); }
 }
