@@ -12,11 +12,7 @@ import {
 } from "lucide-react";
 import { GALI_RANGES, evaluateGali, type GaliRangeSet } from "@/lib/galiRanges";
 import GaliReport from "@/components/plant-operator/GaliReport";
-<<<<<<< HEAD
 import { GlassDropdown } from "@/components/manager/plant/ui"; // same dropdown as the Manager "Analytics & Trends" page
-=======
-import GlassSearchSelect, { type Option } from "@/components/plant-operator/GlassSearchSelect";
->>>>>>> 5662b0dc86bb26d3ca6cd5eb5bde07b4024d7b1b
 
 // Shared "frosted glass" look (same as the other pages)
 const glass =
@@ -147,11 +143,6 @@ export default function GaliPage() {
       setRegistering(false);
     }
   };
-
-  const vehicleOptions = useMemo<Option[]>(
-    () => vehicles.map((v) => ({ value: v.id, label: v.vehicleNumber })),
-    [vehicles]
-  );
 
   // ---- Auto result for the ES / PH values ----
   const esNum = toNum(es);
@@ -294,7 +285,6 @@ export default function GaliPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Select vehicle</label>
-<<<<<<< HEAD
             <GlassDropdown
               value={vehicleId}
               onChange={(id) => {
@@ -303,18 +293,6 @@ export default function GaliPage() {
               }}
               options={vehicles.map((v) => ({ id: v.id, label: v.vehicleNumber }))}
               placeholder="Select a registered vehicle"
-=======
-            <GlassSearchSelect
-              value={vehicleId}
-              onChange={(v) => {
-                setVehicleId(v);
-                setCheckNotice(null);
-              }}
-              options={vehicleOptions}
-              placeholder="-- Select a registered vehicle --"
-              searchPlaceholder="Search vehicle number..."
-              emptyText={vehicles.length === 0 ? "No vehicles registered yet" : "No vehicle matches your search"}
->>>>>>> 5662b0dc86bb26d3ca6cd5eb5bde07b4024d7b1b
             />
           </div>
 
