@@ -212,6 +212,7 @@ model GaliCheck {
   phValue   Float
   inRange   Boolean     // true when both ES and PH were inside the allowed range
   decision  String      // APPROVED or REJECTED
+  values    Json?       // Snapshot of every parameter checked: [{ name, unit, min, max, value, ok }]
   checkedBy String
   createdAt DateTime    @default(now())
 
@@ -287,12 +288,15 @@ model GaliParameter {
 model PlantTank {
   id         String          @id @default(uuid())
   name       String          @unique
+  checkMode  String          @default("SINGLE") // LEGACY - not used by the app any more (kept so no data is dropped). Lives on each TankParameter now
+  frequency  String          @default("SHIFT")  // LEGACY - not used by the app any more (kept so no data is dropped). Lives on each TankParameter now
   parameters TankParameter[]
   readings   TankReading[]
   createdAt  DateTime        @default(now())
 }
 
-// A parameter the tank operator must check on this tank (range is optional)
+// A parameter the tank operator must check on this tank (range is optional).
+// Each parameter has its OWN reading type and check frequency (set by the Manager when the parameter is added).
 model TankParameter {
   id        String    @id @default(uuid())
   tankId    String
@@ -301,6 +305,8 @@ model TankParameter {
   unit      String?
   min       Float?
   max       Float?
+  checkMode String    @default("SINGLE") // Reading type: SINGLE = one value, IN_OUT = an In value and an Out value
+  frequency String    @default("SHIFT")  // Check frequency: SHIFT = every shift, DAILY = once a day (stored with shiftNo 0)
   createdAt DateTime  @default(now())
 
   @@unique([tankId, name])
@@ -326,7 +332,8 @@ model TankShiftAssignment {
   @@index([date])
 }
 
-// One reading = one tank, one day, one shift
+// One row = one tank, one day, one shift (shiftNo 0 = "once a day" parameters).
+// Parameters are saved one by one and merged into this row
 model TankReading {
   id         String    @id @default(uuid())
   tankId     String
@@ -334,6 +341,7 @@ model TankReading {
   date       String    // YYYY-MM-DD (Sri Lanka)
   shiftNo    Int
   values     Json      // { "<parameterId>": number }
+  valuesOut  Json?     // Out values, only for In & Out tanks ("values" then holds the In values)
   recordedBy String
   createdAt  DateTime  @default(now())
 

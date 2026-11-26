@@ -14,6 +14,7 @@
  * The total builds up at the bottom while you go through the steps.
  */
 
+import { formatChem } from "@/lib/chemFormat";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, Check, ChevronLeft, ChevronRight, Loader2, Download, Printer, FileText, Search, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -376,7 +377,7 @@ export default function BillWizard({
                             <label key={r.id} className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-blue-50/50">
                               <input type="checkbox" checked={!!selected[r.parameterId]} onChange={() => toggleParam(r.parameterId)} className="w-4 h-4 accent-blue-600" />
                               <span className="flex-1 min-w-0">
-                                <span className="block text-sm font-semibold text-slate-800 truncate">{r.parameterName}</span>
+                                <span className="block text-sm font-semibold text-slate-800 truncate">{formatChem(r.parameterName)}</span>
                                 {also.length > 0 && <span className="block text-[10px] text-amber-600 truncate">Also in {also.join(", ")} · charged once</span>}
                               </span>
                               <span className="text-xs font-bold text-slate-600 tabular-nums">{money(r.price)}</span>

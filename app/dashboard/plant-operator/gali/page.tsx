@@ -10,7 +10,7 @@ import {
   ClipboardCheck,
   AlertCircle,
 } from "lucide-react";
-import { GALI_RANGES, evaluateGali } from "@/lib/galiRanges";
+import { GALI_RANGES, evaluateGali, type GaliRangeSet } from "@/lib/galiRanges";
 import GaliReport from "@/components/plant-operator/GaliReport";
 import GlassSearchSelect, { type Option } from "@/components/plant-operator/GlassSearchSelect";
 
@@ -68,6 +68,7 @@ function DecisionBadge({ decision }: { decision: "APPROVED" | "REJECTED" }) {
 }
 
 export default function GaliPage() {
+  const [ranges, setRanges] = useState<GaliRangeSet>(GALI_RANGES);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [checks, setChecks] = useState<CheckRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,10 +98,16 @@ export default function GaliPage() {
     else throw new Error(json.error || `Checks failed (${res.status})`);
   }, []);
 
+  // Limits set by the Manager (falls back to the defaults if this fails)
+  const loadRanges = useCallback(async () => {
+    const { res, json } = await getJson("/api/plant-operator/gali/ranges");
+    if (res.ok && json.success) setRanges(json.data);
+  }, []);
+
   useEffect(() => {
     (async () => {
       // Each one on its own, so one failing does not block the other
-      const results = await Promise.allSettled([loadVehicles(), loadChecks()]);
+      const results = await Promise.allSettled([loadVehicles(), loadChecks(), loadRanges()]);
       const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed.length > 0) {
         const msg = failed.map((f) => (f.reason instanceof Error ? f.reason.message : String(f.reason))).join(" | ");
@@ -109,7 +116,7 @@ export default function GaliPage() {
       }
       setLoading(false);
     })();
-  }, [loadVehicles, loadChecks]);
+  }, [loadVehicles, loadChecks, loadRanges]);
 
   // ---- Register a vehicle ----
   const registerVehicle = async (e: React.FormEvent) => {
@@ -146,7 +153,7 @@ export default function GaliPage() {
   const esNum = toNum(es);
   const phNum = toNum(ph);
   const bothFilled = !Number.isNaN(esNum) && !Number.isNaN(phNum);
-  const result = useMemo(() => (bothFilled ? evaluateGali(esNum, phNum) : null), [bothFilled, esNum, phNum]);
+  const result = useMemo(() => (bothFilled ? evaluateGali(esNum, phNum, ranges) : null), [bothFilled, esNum, phNum, ranges]);
 
   const canReject = !!vehicleId && !!result && !submitting;
   // Approval is only possible when BOTH values are inside the range
@@ -299,7 +306,7 @@ export default function GaliPage() {
           <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
             <div className="min-w-0">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                ES <span className="font-normal text-slate-500">(range {GALI_RANGES.ES.min} - {GALI_RANGES.ES.max})</span>
+                ES <span className="font-normal text-slate-500">(range {ranges.ES.min} - {ranges.ES.max})</span>
               </label>
               <input
                 type="number"
@@ -316,7 +323,7 @@ export default function GaliPage() {
             </div>
             <div className="min-w-0">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                PH <span className="font-normal text-slate-500">(range {GALI_RANGES.PH.min} - {GALI_RANGES.PH.max})</span>
+                PH <span className="font-normal text-slate-500">(range {ranges.PH.min} - {ranges.PH.max})</span>
               </label>
               <input
                 type="number"
@@ -352,8 +359,8 @@ export default function GaliPage() {
               </p>
               <p className="text-xs text-red-700/80 mt-0.5 break-words">
                 {[
-                  !result.esOk && `ES is outside ${GALI_RANGES.ES.min} - ${GALI_RANGES.ES.max}`,
-                  !result.phOk && `PH is outside ${GALI_RANGES.PH.min} - ${GALI_RANGES.PH.max}`,
+                  !result.esOk && `ES is outside ${ranges.ES.min} - ${ranges.ES.max}`,
+                  !result.phOk && `PH is outside ${ranges.PH.min} - ${ranges.PH.max}`,
                 ]
                   .filter(Boolean)
                   .join(" | ")}

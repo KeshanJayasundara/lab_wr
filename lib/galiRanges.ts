@@ -7,8 +7,11 @@ export const GALI_RANGES = {
 
 export type GaliCheckResult = { esOk: boolean; phOk: boolean; approved: boolean };
 
-export function evaluateGali(es: number, ph: number): GaliCheckResult {
-  const esOk = Number.isFinite(es) && es >= GALI_RANGES.ES.min && es <= GALI_RANGES.ES.max;
-  const phOk = Number.isFinite(ph) && ph >= GALI_RANGES.PH.min && ph <= GALI_RANGES.PH.max;
+export type GaliRangeSet = { ES: { min: number; max: number }; PH: { min: number; max: number } };
+
+// `ranges` lets the Manager-defined limits (database) replace the built-in defaults.
+export function evaluateGali(es: number, ph: number, ranges: GaliRangeSet = GALI_RANGES): GaliCheckResult {
+  const esOk = Number.isFinite(es) && es >= ranges.ES.min && es <= ranges.ES.max;
+  const phOk = Number.isFinite(ph) && ph >= ranges.PH.min && ph <= ranges.PH.max;
   return { esOk, phOk, approved: esOk && phOk };
 }

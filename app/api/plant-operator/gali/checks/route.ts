@@ -1,7 +1,9 @@
+// >>> SAVE AS: app/api/plant-operator/gali/checks/route.ts   (UPDATED - replace the whole file) - delete this line after saving <<<
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyPlantOperator } from "@/lib/plantOperatorAuth";
 import { evaluateGali } from "@/lib/galiRanges";
+import { getGaliRanges } from "@/lib/plantConfig";
 import { colomboMonthRange, currentColomboMonth } from "@/lib/galiReport";
 
 // GET: Gali checks of the CURRENT month only (Sri Lanka time)
@@ -62,7 +64,7 @@ export async function POST(request: Request) {
     }
 
     // The server re-checks the range itself, so the screen can't be tricked
-    const { approved } = evaluateGali(es, ph);
+    const { approved } = evaluateGali(es, ph, await getGaliRanges());
     if (decision === "APPROVED" && !approved) {
       return NextResponse.json(
         { success: false, error: "Values are outside the allowed range - this can only be rejected" },
