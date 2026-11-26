@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem } from "@/lib/chemFormat";
 import React, { useEffect, useRef, useState } from "react";
 import { Upload, Download, FileSpreadsheet, CheckCircle2, AlertTriangle, XCircle, Loader2, Copy } from "lucide-react";
 
@@ -284,7 +285,7 @@ export default function ImportPastDataPage() {
                     <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.ref || r.line}</td>
                     <td className="px-3 py-2">{r.dateKey || "-"}</td>
                     <td className="px-3 py-2">{r.unitName || "-"}</td>
-                    <td className="px-3 py-2">{r.parameter || "-"}</td>
+                    <td className="px-3 py-2">{r.parameter ? formatChem(r.parameter) : "-"}</td>
                     <td className="px-3 py-2">{r.value ?? "-"}</td>
                     <td className="px-3 py-2">
                       {r.state === "ok" && <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={13} /> OK{r.status && r.status !== "Normal" ? ` (${r.status})` : ""}</span>}

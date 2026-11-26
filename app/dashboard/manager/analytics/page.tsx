@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import React, { useEffect, useRef, useState } from "react";
 import { BarChart3, GitPullRequest, Sliders, Clock, ChevronDown, Check } from "lucide-react";
 
@@ -28,7 +29,7 @@ type SeriesMeta = {
 };
 
 const formatLimits = (min: number | null, max: number | null, unit: string | null) => {
-  const u = unit ? ` ${unit}` : "";
+  const u = unit ? ` ${formatUnit(unit)}` : "";
   if (min !== null && max !== null) return `${min} - ${max}${u}`;
   if (max !== null) return `\u2264 ${max}${u}`;
   if (min !== null) return `\u2265 ${min}${u}`;
@@ -362,7 +363,7 @@ export default function ManagerAnalyticsPage() {
   const paramOptionsFor = (typeId: string): Option[] =>
     (unitsData.find((u) => u.typeId === typeId)?.parameters ?? []).map((p) => ({
       value: p.name,
-      label: `${p.name}${p.unit ? ` (${p.unit})` : ""} · ${p.recordCount} reading${p.recordCount === 1 ? "" : "s"}`,
+      label: `${formatChem(p.name)}${p.unit ? ` (${formatUnit(p.unit)})` : ""} · ${p.recordCount} reading${p.recordCount === 1 ? "" : "s"}`,
       disabled: p.recordCount === 0,
     }));
 
@@ -370,7 +371,7 @@ export default function ManagerAnalyticsPage() {
     const u = unitsData.find((x) => x.typeId === typeId);
     const prm = u?.parameters.find((x) => x.name === param);
     if (!u || !prm) return { short: fallback, full: fallback };
-    const short = `${prm.name}${prm.unit ? ` (${prm.unit})` : ""}`;
+    const short = `${formatChem(prm.name)}${prm.unit ? ` (${formatUnit(prm.unit)})` : ""}`;
     return { short, full: `${short} · ${u.name}` };
   };
 

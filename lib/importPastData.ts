@@ -286,7 +286,7 @@ export function validateRows(rows: RawRow[], ctx: ValidationCtx): RowResult[] {
       cfg = cfgs.find((c) => normLoose(c.parameterName) === pl);
     }
     if (!cfg && !ctx.allowUnknownParams) {
-      return fail(`Parameter "${r.parameter}" is not set up for "${type.name}" (add it under Parameter Ranges first)`);
+      return fail(`Parameter "${r.parameter}" is not set up for "${type.name}" (assign it under Parameter Assign & Add Ranges first)`);
     }
     const parameter = cfg ? cfg.parameterName : r.parameter.trim();
     const status = evaluateStatus(num, cfg);

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, CheckCircle2, AlertTriangle, User, Loader2, X, ShieldCheck, Eye, ChevronDown, Layers, FlaskConical, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -349,7 +350,7 @@ export default function AdminTestRecordsPage() {
                       <div key={r.id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                         <div className="min-w-0">
                           <div className="font-mono text-xs text-slate-800 break-words">
-                            <strong>{r.parameter}:</strong> {fmtNum(r.value)} {r.unit}
+                            <strong>{formatChem(r.parameter)}:</strong> {fmtNum(r.value)} {formatUnit(r.unit)}
                           </div>
                           <ChemicalList items={r.chemicals} />
                         </div>
@@ -445,7 +446,7 @@ export default function AdminTestRecordsPage() {
                       <div key={r.id} className="px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3">
                           <span className="font-mono font-bold text-indigo-700 break-words min-w-0">
-                            {r.parameter}: {fmtNum(r.value)} {r.unit}
+                            {formatChem(r.parameter)}: {fmtNum(r.value)} {formatUnit(r.unit)}
                           </span>
                           <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusClass(r.status)}`}>
                             {r.status}

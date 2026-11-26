@@ -10,6 +10,8 @@
 //   m^3             m³        ^ forces a superscript anywhere  (also  ^+  ^-  e.g. NH4^+  ->  NH₄⁺ ,  Fe^3+ ,  s^-1)
 //   W\2             W2        \ keeps the next number normal size
 //   W 2 / W-2       W 2/W-2   a number after a space or dash is always normal ("Tank 01")
+//   FeCl3.6H2O      FeCl₃·6H₂O   water of crystallisation: a dot before xH2O becomes a middle dot  ·
+//   MgSO4 .7H2O     MgSO₄·7H₂O   (spaces around that dot are removed too)
 const SUB = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"];
 const SUP: Record<string, string> = {
   "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "+": "⁺", "-": "⁻",
@@ -24,6 +26,8 @@ const toSup = (chars: string) => chars.replace(/[0-9+\-]/g, (c) => SUP[c]);
  */
 export function formatChem(text?: string | null, mode: "name" | "unit" = "name"): string {
   if (!text) return "";
+  // hydrates: "FeCl3.6H2O" / "MgSO4 .7H2O" / "MnSO4.H2O"  ->  "FeCl3·6H2O" ...  (then the numbers are subscripted below)
+  text = text.replace(/(?<=[A-Za-z0-9)\]])\s*[.·]\s*(?=\d*H(?:2|₂)O)/g, "·");
   return text.replace(
     /\^([0-9+\-]+)|([A-Za-z)\]])(\\?)(\d+)/g,
     (_m, sup: string | undefined, ch: string | undefined, esc: string | undefined, digits: string | undefined) => {

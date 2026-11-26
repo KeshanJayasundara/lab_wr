@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { Plus, Loader2, FlaskConical, TestTube2, Trash2, Search, Folder, ChevronDown, Check, CheckCircle2, AlertCircle, X, Sliders, Eye, Edit3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UnitSelect } from "@/components/UnitSelect";
-import { formatUnit } from "@/lib/chemFormat";
+import { formatChem, formatUnit } from "@/lib/chemFormat";
 
 const glass =
   "bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(15,23,42,0.10)] ring-1 ring-inset ring-white/40";
@@ -115,7 +115,7 @@ function buildCategoryGroups(list: any[]): CategoryGroup[] {
 
 // Reusable Custom Searchable Dropdown Component
 function SearchableDropdown({ options, value, onChange, placeholder, disabled = false, icon: Icon, clearable = false }: {
-  options: { id: string; label: string; subLabel?: string }[];
+  options: { id: string; label: string; subLabel?: string; searchText?: string }[];
   value: string;
   onChange: (id: string) => void;
   placeholder: string;
@@ -131,6 +131,7 @@ function SearchableDropdown({ options, value, onChange, placeholder, disabled = 
 
   const filteredOptions = options.filter((opt) =>
     opt.label.toLowerCase().includes(search.toLowerCase()) ||
+    (opt.searchText && opt.searchText.toLowerCase().includes(search.toLowerCase())) ||
     (opt.subLabel && opt.subLabel.toLowerCase().includes(search.toLowerCase()))
   );
 
@@ -220,6 +221,8 @@ export default function ParameterDosagesPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [types, setTypes] = useState<any[]>([]);
   const [globalParameters, setGlobalParameters] = useState<any[]>([]);
+  // Parameters assigned to each tank / unit (set in "Parameter Assign & Add Ranges")
+  const [assignedConfigs, setAssignedConfigs] = useState<any[]>([]);
   const [chemicals, setChemicals] = useState<any[]>([]);
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,12 +277,13 @@ export default function ParameterDosagesPage() {
 
   const fetchData = async () => {
     try {
-      const [catRes, typeRes, paramRes, chemRes, recRes] = await Promise.all([
+      const [catRes, typeRes, paramRes, chemRes, recRes, cfgRes] = await Promise.all([
         fetch("/api/manager/categories"),
         fetch("/api/manager/types"),
         fetch("/api/manager/parameters"),
         fetch("/api/manager/chemicals"),
         fetch("/api/manager/parameter-dosages"),
+        fetch("/api/manager/ranges"),
       ]);
 
       const catData = await catRes.json();
@@ -287,12 +291,14 @@ export default function ParameterDosagesPage() {
       const paramData = await paramRes.json();
       const chemData = await chemRes.json();
       const recData = await recRes.json();
+      const cfgData = await cfgRes.json();
 
       if (catRes.ok) setCategories(catData.data || []);
       if (typeRes.ok) setTypes(typeData.data || []);
       if (paramRes.ok) setGlobalParameters(paramData.data || []);
       if (chemRes.ok) setChemicals(chemData.data || []);
       if (recRes.ok) setRecords(recData.data || []);
+      if (cfgRes.ok) setAssignedConfigs(cfgData.data || []);
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -303,6 +309,15 @@ export default function ParameterDosagesPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Re-read the assigned parameters each time the popup opens (so parameters just assigned show up)
+  useEffect(() => {
+    if (!isModalOpen) return;
+    fetch("/api/manager/ranges")
+      .then((r) => r.json())
+      .then((d) => { if (d?.data) setAssignedConfigs(d.data); })
+      .catch(() => {});
+  }, [isModalOpen]);
 
   const refreshRecords = async () => {
     try {
@@ -318,7 +333,7 @@ export default function ParameterDosagesPage() {
   const selectedType = types.find((t) => t.id === selectedTypeId);
   const formFilteredTypes = types.filter((t) => t.categoryId === selectedCatId);
   const filterFilteredTypes = types.filter((t) => !filterCatId || t.categoryId === filterCatId);
-  const chemName = (id: string) => chemicals.find((c) => c.id === id)?.name || "";
+  const chemName = (id: string) => formatChem(chemicals.find((c) => c.id === id)?.name || "");
 
   const hasActiveFilters = !!(filterCatId || filterTypeId || searchText.trim());
 
@@ -346,8 +361,14 @@ export default function ParameterDosagesPage() {
   const findExisting = (paramName: string, chemicalId: string) =>
     records.find((r) => r.typeId === selectedTypeId && norm(r.parameterName) === norm(paramName) && r.chemicalId === chemicalId);
 
-  // Catalog parameters not yet used in the form (quick-add chips)
-  const catalogSuggestions = globalParameters.filter((p) => !paramRows.some((r) => norm(r.paramName) === norm(p.name)));
+  // Parameters assigned to the chosen tank / unit (only these can be picked)
+  const assignedParams = assignedConfigs
+    .filter((c) => c.typeId === selectedTypeId)
+    .map((c) => ({ id: c.id, name: c.parameterName as string, unit: c.unit as string | null }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Assigned parameters not yet used in the form (quick-add chips)
+  const catalogSuggestions = assignedParams.filter((p) => !paramRows.some((r) => norm(r.paramName) === norm(p.name)));
 
   // ---------- Validation ----------
   // level "error" = something is wrong, "hint" = something is still missing. Both block saving.
@@ -553,7 +574,7 @@ export default function ParameterDosagesPage() {
   };
 
   const handleDelete = async (r: any) => {
-    if (!confirm(`Remove ${r.chemical?.name || "this chemical"} from ${r.parameterName} (${r.type?.name || "unit"})?`)) return;
+    if (!confirm(`Remove ${formatChem(r.chemical?.name) || "this chemical"} from ${r.parameterName} (${r.type?.name || "unit"})?`)) return;
     try {
       const res = await fetch(`/api/manager/parameter-dosages?id=${r.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
@@ -682,7 +703,7 @@ export default function ParameterDosagesPage() {
                       <div className="flex flex-wrap gap-1.5">
                         {u.params.slice(0, 4).map((p) => (
                           <span key={p.name} className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                            {p.name}
+                            {formatChem(p.name)}
                           </span>
                         ))}
                         {u.params.length > 4 && (
@@ -766,7 +787,7 @@ export default function ParameterDosagesPage() {
                   <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50/90 border-b border-slate-200/70">
                     <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2 min-w-0">
                       <Sliders size={14} className="text-indigo-700 flex-shrink-0" />
-                      <span className="truncate">{p.name}</span>
+                      <span className="truncate">{formatChem(p.name)}</span>
                       <span className="text-[11px] font-semibold text-slate-500">
                         {p.items.length} chemical{p.items.length > 1 ? "s" : ""}
                       </span>
@@ -785,7 +806,7 @@ export default function ParameterDosagesPage() {
                       <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                         <div className="min-w-0 space-y-0.5">
                           <p className="text-sm text-slate-800 flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-emerald-700">{r.chemical?.name || "Chemical"}</span>
+                            <span className="font-bold text-emerald-700">{r.chemical?.name ? formatChem(r.chemical.name) : "Chemical"}</span>
                             <span className="text-xs font-semibold text-blue-700 bg-blue-500/10 px-2 py-0.5 rounded-md">
                               {r.amount} {formatUnit(r.unit)}
                             </span>
@@ -914,6 +935,17 @@ export default function ParameterDosagesPage() {
                   )}
 
                   {/* Quick add chips */}
+                  {!editMode && !selectedTypeId && (
+                    <p className="text-[11px] font-medium text-slate-500">Choose a category and a unit / tank to see its assigned parameters.</p>
+                  )}
+                  {!editMode && selectedTypeId && assignedParams.length === 0 && (
+                    <p className="text-[11px] font-medium text-amber-600">
+                      No parameters are assigned to this unit / tank yet. Assign them first in Parameter Assign &amp; Add Ranges.
+                    </p>
+                  )}
+                  {!editMode && selectedTypeId && assignedParams.length > 0 && catalogSuggestions.length === 0 && (
+                    <p className="text-[11px] font-medium text-slate-500">All assigned parameters of this unit / tank are already added below.</p>
+                  )}
                   {!editMode && catalogSuggestions.length > 0 && (
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-semibold text-slate-500">Quick add parameter:</p>
@@ -925,7 +957,7 @@ export default function ParameterDosagesPage() {
                             onClick={() => handleQuickAddParam(p)}
                             className="text-xs font-semibold text-blue-700 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-200 px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer transition-colors"
                           >
-                            <Plus size={11} /> {p.name}
+                            <Plus size={11} /> {formatChem(p.name)}
                           </button>
                         ))}
                       </div>
@@ -943,13 +975,14 @@ export default function ParameterDosagesPage() {
                         .map((c) => `${chemName(c.chemicalId) || "?"}${hasValue(c.amount) ? ` ${c.amount} ${formatUnit(c.unit)}` : ""}`)
                         .join(" · ");
 
-                      const paramOptions = globalParameters.map((p) => ({
+                      const paramOptions: { id: string; label: string; subLabel?: string; searchText?: string }[] = assignedParams.map((p) => ({
                         id: p.name,
-                        label: p.name,
+                        label: formatChem(p.name),
+                        searchText: p.name,
                         subLabel: p.unit ? `Unit: ${formatUnit(p.unit)}` : undefined,
                       }));
                       if (named && !paramOptions.some((o) => o.id === row.paramName)) {
-                        paramOptions.push({ id: row.paramName, label: row.paramName, subLabel: undefined });
+                        paramOptions.push({ id: row.paramName, label: formatChem(row.paramName), subLabel: undefined });
                       }
 
                       return (
@@ -1043,7 +1076,7 @@ export default function ParameterDosagesPage() {
                                       </div>
 
                                       <SearchableDropdown
-                                        options={chemicals.map((c) => ({ id: c.id, label: c.name, subLabel: `Stock: ${c.quantity} ${formatUnit(c.unit)}` }))}
+                                        options={chemicals.map((c) => ({ id: c.id, label: formatChem(c.name), searchText: c.name, subLabel: `Stock: ${c.quantity} ${formatUnit(c.unit)}` }))}
                                         value={chem.chemicalId}
                                         onChange={(id) => handleChemicalChange(pi, ci, "chemicalId", id)}
                                         placeholder="-- Choose Chemical --"

@@ -108,7 +108,7 @@ export default function ManagerLayout({
     { name: "Chemical Catalog", href: "/dashboard/manager/chemicals", icon: FlaskConical },
     { name: "Test Categories & Units", href: "/dashboard/manager/categories", icon: FolderTree },
     { name: "Parameter Management", href: "/dashboard/manager/mappings", icon: TestTube2 },
-    { name: "Parameter Ranges", href: "/dashboard/manager/ranges", icon: Sliders },
+    { name: "Parameter Assign & Add Ranges", href: "/dashboard/manager/ranges", icon: Sliders },
     { name: "Parameter Dosages", href: "/dashboard/manager/parameter-dosages", icon: FlaskConical },
     { name: "Private Samples", href: "/dashboard/manager/private-samples", icon: Droplets },
     { name: "Plant Operator", href: "/dashboard/manager/plant-operator", icon: HardHat },

@@ -57,7 +57,7 @@ function formatRange(min: any, max: any, text: string | null | undefined, unit: 
   if (hasValue(min) && hasValue(max)) return `${min} – ${max}${u}`;
   if (hasValue(min)) return `≥ ${min}${u}`;
   if (hasValue(max)) return `≤ ${max}${u}`;
-  return "Not set";
+  return "No range set";
 }
 
 // ---------- Comparison operators (>=, >, <=, <) ----------
@@ -88,7 +88,7 @@ function buildOpText(min: any, max: any, minOp: MinOp, maxOp: MaxOp, name?: stri
 // What the user will see for a limit (special text > operator style)
 function formatLimit(min: any, max: any, minOp: MinOp, maxOp: MaxOp, text: string, name?: string | null) {
   if (text && text.trim()) return text.trim();
-  return buildOpText(min, max, minOp, maxOp, name) || "Not set";
+  return buildOpText(min, max, minOp, maxOp, name) || "No range set";
 }
 
 // What we save in rangeText. Only needed when a strict operator (> or <) is used,
@@ -595,11 +595,7 @@ export default function ManagerTankRangesPage() {
     if (rows.some((r, i) => i < index && norm(r.parameterName) === name)) {
       return { level: "error", text: `"${row.parameterName.trim()}" is added twice in this list.` };
     }
-    const minSet = hasValue(row.standardMin);
-    const maxSet = hasValue(row.standardMax);
-    if (!minSet && !maxSet && !row.rangeText.trim()) {
-      return { level: "hint", text: "Enter a Min, a Max, or a special rule." };
-    }
+    // A range is OPTIONAL: with no Min / Max / special rule the parameter is simply assigned to the unit.
     const lim = limitIssue(row.standardMin, row.standardMax, row.minOp, row.maxOp, !!row.rangeText.trim());
     if (lim) return { level: "error", text: lim };
     return null;
@@ -668,10 +664,6 @@ export default function ManagerTankRangesPage() {
         setToast({ message: limErr, type: "error" });
         return;
       }
-      if (!hasValue(editMin) && !hasValue(editMax) && !editRangeText.trim()) {
-        setToast({ message: "Enter a Min, a Max, or a special rule.", type: "error" });
-        return;
-      }
 
       setSubmitting(true);
       try {
@@ -689,7 +681,7 @@ export default function ManagerTankRangesPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to update range");
 
-        setToast({ message: `"${formatChem(editParamName)}" limit updated successfully!`, type: "success" });
+        setToast({ message: `"${formatChem(editParamName)}" updated successfully!`, type: "success" });
         cancelEdit();
         setIsModalOpen(false);
         refreshRanges();
@@ -736,7 +728,7 @@ export default function ManagerTankRangesPage() {
         if (!res.ok) throw new Error(data.error || "Failed to save parameter ranges");
 
         setToast({
-          message: `${filledRows.length} parameter limit${filledRows.length > 1 ? "s" : ""} added to ${selectedType?.name || "the unit"}!`,
+          message: `${filledRows.length} parameter${filledRows.length > 1 ? "s" : ""} assigned to ${selectedType?.name || "the unit"}!`,
           type: "success",
         });
         cancelEdit();
@@ -801,7 +793,7 @@ export default function ManagerTankRangesPage() {
   };
 
   const handleDeleteRange = async (r: any) => {
-    if (!confirm(`Delete the "${r.parameterName}" limit for ${r.type?.name || "this unit"}?`)) return;
+    if (!confirm(`Remove "${r.parameterName}" from ${r.type?.name || "this unit"}?`)) return;
     try {
       const res = await fetch(`/api/manager/ranges?id=${r.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete configuration");
@@ -827,10 +819,10 @@ export default function ManagerTankRangesPage() {
             <span className="p-2.5 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-lg">
               <Sliders size={22} />
             </span>
-            Tank & Unit Parameter Ranges Hub
+            Parameter Assign & Add Ranges
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Set the acceptable min / max limits for each tank or unit, and see every configured limit in one place.
+            Assign parameters to each tank or unit. Adding a min / max range is optional, so you can assign a parameter with a range or without one.
           </p>
         </div>
 
@@ -838,7 +830,7 @@ export default function ManagerTankRangesPage() {
           onClick={openAddModal}
           className="bg-blue-600 hover:bg-blue-700 text-white rounded-2xl h-11 px-5 font-semibold shadow-lg cursor-pointer flex items-center gap-2 flex-shrink-0"
         >
-          <Plus size={18} /> Add Parameter Limits
+          <Plus size={18} /> Assign Parameters
         </Button>
       </div>
 
@@ -1010,17 +1002,17 @@ export default function ManagerTankRangesPage() {
                       {r.unit && <span className="text-xs font-normal text-slate-500">({formatChem(r.unit, "unit")})</span>}
                     </h4>
                     <p className="text-xs text-slate-600">
-                      Acceptable range:{" "}
+                      Range:{" "}
                       <span className="font-semibold text-blue-700 bg-blue-500/10 px-2 py-0.5 rounded-md">
                         {displayRange(r)}
                       </span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => startEdit(r)} className="p-2 rounded-xl text-blue-600 hover:bg-blue-500/10 transition-all cursor-pointer" title="Edit limit">
+                    <button onClick={() => startEdit(r)} className="p-2 rounded-xl text-blue-600 hover:bg-blue-500/10 transition-all cursor-pointer" title="Edit range">
                       <Edit3 size={16} />
                     </button>
-                    <button onClick={() => handleDeleteRange(r)} className="p-2 rounded-xl text-red-500 hover:bg-red-500/10 transition-all cursor-pointer" title="Delete limit">
+                    <button onClick={() => handleDeleteRange(r)} className="p-2 rounded-xl text-red-500 hover:bg-red-500/10 transition-all cursor-pointer" title="Remove parameter from this unit">
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -1034,7 +1026,7 @@ export default function ManagerTankRangesPage() {
                 onClick={() => openAddForUnit(viewGroup)}
                 className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-full h-10 px-4 text-xs font-semibold shadow-none cursor-pointer flex items-center gap-1.5"
               >
-                <Plus size={14} /> Add parameter
+                <Plus size={14} /> Assign parameter
               </Button>
               <Button type="button" onClick={() => setViewTypeId(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-full h-10 px-5 font-semibold cursor-pointer shadow-sm">
                 Close
@@ -1057,10 +1049,10 @@ export default function ManagerTankRangesPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
               <div>
                 <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
-                  <Sliders size={20} className="text-blue-600" /> {editingId ? "Edit Parameter Limit" : "Add Parameter Limits"}
+                  <Sliders size={20} className="text-blue-600" /> {editingId ? "Edit Parameter / Range" : "Assign Parameters & Add Ranges"}
                 </h3>
                 {!editingId && (
-                  <p className="text-xs text-slate-500 mt-0.5">Pick a tank / unit, then add as many parameters as you need in one go.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Pick a tank / unit, then assign as many parameters as you need. A range is optional.</p>
                 )}
               </div>
               <button onClick={() => setIsModalOpen(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer transition-colors">
@@ -1150,7 +1142,7 @@ export default function ManagerTankRangesPage() {
                         onChange={(e) => setEditRangeText(e.target.value)}
                         className={glassField}
                       />
-                      <p className="text-[11px] text-slate-500">{"Only for words like Absent / Nil. If filled, it replaces the min / max and the ≥ > ≤ < choices."}</p>
+                      <p className="text-[11px] text-slate-500">{"Only for words like Absent / Nil. If filled, it replaces the min / max and the ≥ > ≤ < choices. Leave Min, Max and this empty to remove the range (the parameter stays assigned)."}</p>
                     </div>
 
                     <div className="text-xs text-slate-600 bg-blue-50/70 border border-blue-100 rounded-2xl px-3.5 py-2.5">
@@ -1203,7 +1195,7 @@ export default function ManagerTankRangesPage() {
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
                           <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center">2</span>
-                          Add the parameters
+                          Assign the parameters (range is optional)
                         </p>
                       </div>
 
@@ -1370,6 +1362,10 @@ export default function ManagerTankRangesPage() {
                                     </div>
                                   </div>
 
+                                  <p className="text-[11px] text-slate-500">
+                                    Min / Max / Special rule are optional. Leave them empty to assign this parameter without a range.
+                                  </p>
+
                                   {named && (
                                     <div className="text-xs">
                                       {issue ? (
@@ -1411,7 +1407,7 @@ export default function ManagerTankRangesPage() {
                 {editingId
                   ? "Changes apply immediately after saving."
                   : readyCount > 0
-                    ? `${readyCount} parameter${readyCount > 1 ? "s" : ""} ready to save${selectedType ? ` to ${selectedType.name}` : ""}`
+                    ? `${readyCount} parameter${readyCount > 1 ? "s" : ""} ready to assign${selectedType ? ` to ${selectedType.name}` : ""}`
                     : "Nothing to save yet."}
               </p>
               <div className="flex items-center gap-3 ml-auto">
@@ -1422,11 +1418,11 @@ export default function ManagerTankRangesPage() {
                   {submitting ? (
                     <Loader2 className="animate-spin h-5 w-5" />
                   ) : editingId ? (
-                    "Update Limit"
+                    "Update"
                   ) : readyCount > 0 ? (
-                    `Save ${readyCount} Parameter${readyCount > 1 ? "s" : ""}`
+                    `Assign ${readyCount} Parameter${readyCount > 1 ? "s" : ""}`
                   ) : (
-                    "Save Parameters"
+                    "Assign Parameters"
                   )}
                 </Button>
               </div>
