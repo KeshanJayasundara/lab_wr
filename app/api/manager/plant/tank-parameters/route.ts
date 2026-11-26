@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isCheckMode, isFrequency } from "@/lib/tankModes";
 import { guard, unauthorized, fail, ok, numOrNull } from "../_h";
 
 function parse(b: any) {
@@ -8,7 +9,11 @@ function parse(b: any) {
   if (!name || name.length > 40) return { error: "Enter a parameter name" };
   if ((min !== null && !Number.isFinite(min)) || (max !== null && !Number.isFinite(max))) return { error: "Min / max must be numbers" };
   if (min !== null && max !== null && min > max) return { error: "Minimum cannot be greater than maximum" };
-  return { data: { name, unit, min, max } };
+  if (b.checkMode !== undefined && !isCheckMode(b.checkMode)) return { error: "Select a valid reading type" };
+  if (b.frequency !== undefined && !isFrequency(b.frequency)) return { error: "Select a valid check frequency" };
+  const checkMode = isCheckMode(b.checkMode) ? b.checkMode : "SINGLE";
+  const frequency = isFrequency(b.frequency) ? b.frequency : "SHIFT";
+  return { data: { name, unit, min, max, checkMode, frequency } };
 }
 
 export async function POST(request: Request) {

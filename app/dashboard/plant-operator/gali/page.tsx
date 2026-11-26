@@ -1,16 +1,26 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Truck, PlusCircle, CheckCircle2, XCircle, Loader2, ClipboardCheck, AlertCircle } from "lucide-react";
+import {
+  Truck,
+  PlusCircle,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  ClipboardCheck,
+  AlertCircle,
+} from "lucide-react";
 import { GALI_RANGES, evaluateGali, type GaliRangeSet } from "@/lib/galiRanges";
 import GaliReport from "@/components/plant-operator/GaliReport";
+import { GlassDropdown } from "@/components/manager/plant/ui"; // same dropdown as the Manager "Analytics & Trends" page
 
 // Shared "frosted glass" look (same as the other pages)
 const glass =
   "bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(15,23,42,0.10)] ring-1 ring-inset ring-white/40";
 
+// Phones: 16px text (stops the iOS zoom-on-focus) + 44px tap height. sm and up: compact.
 const inputClass =
-  "w-full h-11 rounded-xl border border-white/70 bg-white/70 px-3 text-sm text-slate-800 " +
+  "w-full min-h-[44px] sm:min-h-0 sm:h-11 rounded-xl border border-white/70 bg-white/70 px-3 text-base sm:text-sm text-slate-800 " +
   "placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40";
 
 type Vehicle = { id: string; vehicleNumber: string };
@@ -41,6 +51,20 @@ async function getJson(url: string) {
     throw new Error(`${url} returned ${res.status} (not JSON)`);
   }
   return { res, json };
+}
+
+function DecisionBadge({ decision }: { decision: "APPROVED" | "REJECTED" }) {
+  return (
+    <span
+      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${
+        decision === "APPROVED"
+          ? "bg-emerald-400/20 text-emerald-700 border-emerald-400/40"
+          : "bg-red-400/20 text-red-700 border-red-400/40"
+      }`}
+    >
+      {decision === "APPROVED" ? "Approved" : "Rejected"}
+    </span>
+  );
 }
 
 export default function GaliPage() {
@@ -162,7 +186,8 @@ export default function GaliPage() {
   const renderNotice = (notice: Notice) =>
     notice ? (
       <div
-        className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border ${
+        role="status"
+        className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border break-words ${
           notice.type === "success"
             ? "bg-emerald-500/10 text-emerald-700 border-emerald-400/40"
             : "bg-red-500/10 text-red-700 border-red-400/40"
@@ -173,34 +198,35 @@ export default function GaliPage() {
         ) : (
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
         )}
-        <span>{notice.text}</span>
+        <span className="min-w-0">{notice.text}</span>
       </div>
     ) : null;
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+      {/* Page title */}
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
           <Truck size={20} />
         </div>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-lg sm:text-xl font-semibold text-slate-800 tracking-tight">Gali</h1>
-          <p className="text-xs text-slate-600">Register Gali vehicles and check them daily.</p>
+          <p className="text-xs text-slate-600 leading-snug">Register Gali vehicles and check them daily.</p>
         </div>
       </div>
 
       {loadError && (
-        <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border bg-red-500/10 text-red-700 border-red-400/40">
+        <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm border bg-red-500/10 text-red-700 border-red-400/40 break-words">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <span>Could not load data: {loadError}</span>
+          <span className="min-w-0">Could not load data: {loadError}</span>
         </div>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
         {/* ---------------- Register vehicle ---------------- */}
-        <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
+        <section className={`${glass} min-w-0 rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
           <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-            <PlusCircle size={18} className="text-emerald-600" /> Register Gali Vehicle
+            <PlusCircle size={18} className="text-emerald-600 shrink-0" /> Register Gali Vehicle
           </h2>
           <form onSubmit={registerVehicle} className="space-y-3">
             <div>
@@ -211,6 +237,10 @@ export default function GaliPage() {
                 onChange={(e) => setNewVehicle(e.target.value)}
                 placeholder="e.g. NW CAB-1234"
                 maxLength={20}
+                autoComplete="off"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
                 className={inputClass}
               />
             </div>
@@ -218,7 +248,7 @@ export default function GaliPage() {
             <button
               type="submit"
               disabled={registering || newVehicle.trim() === ""}
-              className="w-full sm:w-auto min-h-[44px] px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
+              className="w-full sm:w-auto min-h-[46px] sm:min-h-[44px] px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all active:scale-[0.98] sm:hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
             >
               {registering ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
               Register
@@ -232,11 +262,11 @@ export default function GaliPage() {
             ) : vehicles.length === 0 ? (
               <p className="text-xs text-slate-500">No vehicles registered yet.</p>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
                 {vehicles.map((v) => (
                   <span
                     key={v.id}
-                    className="px-3 py-1 rounded-full text-xs font-semibold bg-white/70 border border-white/70 text-slate-700"
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white/70 border border-white/70 text-slate-700 break-all"
                   >
                     {v.vehicleNumber}
                   </span>
@@ -247,32 +277,27 @@ export default function GaliPage() {
         </section>
 
         {/* ---------------- Daily check ---------------- */}
-        <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
+        {/* relative z-20: same as the Analytics cards, so the open dropdown is painted above everything below it */}
+        <section className={`${glass} relative z-20 min-w-0 rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4`}>
           <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-            <ClipboardCheck size={18} className="text-blue-600" /> Daily Gali Check
+            <ClipboardCheck size={18} className="text-blue-600 shrink-0" /> Daily Gali Check
           </h2>
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Select vehicle</label>
-            <select
+            <GlassDropdown
               value={vehicleId}
-              onChange={(e) => {
-                setVehicleId(e.target.value);
+              onChange={(id) => {
+                setVehicleId(id);
                 setCheckNotice(null);
               }}
-              className={inputClass}
-            >
-              <option value="">-- Select a registered vehicle --</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicleNumber}
-                </option>
-              ))}
-            </select>
+              options={vehicles.map((v) => ({ id: v.id, label: v.vehicleNumber }))}
+              placeholder="Select a registered vehicle"
+            />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
+            <div className="min-w-0">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 ES <span className="font-normal text-slate-500">(range {ranges.ES.min} - {ranges.ES.max})</span>
               </label>
@@ -289,7 +314,7 @@ export default function GaliPage() {
                 className={inputClass}
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 PH <span className="font-normal text-slate-500">(range {ranges.PH.min} - {ranges.PH.max})</span>
               </label>
@@ -325,7 +350,7 @@ export default function GaliPage() {
               <p className="text-base font-bold text-red-700 flex items-center gap-2">
                 <XCircle size={18} /> Reject
               </p>
-              <p className="text-xs text-red-700/80 mt-0.5">
+              <p className="text-xs text-red-700/80 mt-0.5 break-words">
                 {[
                   !result.esOk && `ES is outside ${ranges.ES.min} - ${ranges.ES.max}`,
                   !result.phOk && `PH is outside ${ranges.PH.min} - ${ranges.PH.max}`,
@@ -338,13 +363,13 @@ export default function GaliPage() {
 
           {renderNotice(checkNotice)}
 
-          {/* Approval / Reject buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Approval / Reject buttons - side by side on every screen */}
+          <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => submitCheck("APPROVED")}
               disabled={!canApprove}
-              className="min-h-[46px] rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
+              className="min-h-[48px] rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/30 transition-all active:scale-[0.98] sm:hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:active:scale-100 cursor-pointer inline-flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               Approval
@@ -353,7 +378,7 @@ export default function GaliPage() {
               type="button"
               onClick={() => submitCheck("REJECTED")}
               disabled={!canReject}
-              className="min-h-[46px] rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-semibold shadow-lg shadow-red-500/30 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer inline-flex items-center justify-center gap-2"
+              className="min-h-[48px] rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm font-semibold shadow-lg shadow-red-500/30 transition-all active:scale-[0.98] sm:hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:active:scale-100 cursor-pointer inline-flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
               Reject
@@ -363,50 +388,80 @@ export default function GaliPage() {
       </div>
 
       {/* ---------------- Recent checks ---------------- */}
-      <section className={`${glass} rounded-2xl sm:rounded-3xl p-4 sm:p-6`}>
+      <section className={`${glass} min-w-0 rounded-2xl sm:rounded-3xl p-4 sm:p-6`}>
         <h2 className="text-base font-semibold text-slate-800">Recent Gali Checks</h2>
-        <p className="text-xs text-slate-600 mb-3">Showing this month's checks only.</p>
+        <p className="text-xs text-slate-600 mb-3">Showing this month&apos;s checks only.</p>
         {loading ? (
           <div className="h-16 rounded bg-white/50 animate-pulse" />
         ) : checks.length === 0 ? (
           <p className="text-sm text-slate-500">No checks recorded this month.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead>
-                <tr className="text-left text-xs text-slate-600 border-b border-white/60">
-                  <th className="py-2 pr-3 font-semibold">Date / Time</th>
-                  <th className="py-2 pr-3 font-semibold">Vehicle</th>
-                  <th className="py-2 pr-3 font-semibold">ES</th>
-                  <th className="py-2 pr-3 font-semibold">PH</th>
-                  <th className="py-2 pr-3 font-semibold">Decision</th>
-                  <th className="py-2 font-semibold">By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {checks.map((c) => (
-                  <tr key={c.id} className="border-b border-white/40 last:border-0 text-slate-700">
-                    <td className="py-2 pr-3 whitespace-nowrap">{new Date(c.createdAt).toLocaleString()}</td>
-                    <td className="py-2 pr-3 font-semibold">{c.vehicle.vehicleNumber}</td>
-                    <td className="py-2 pr-3">{c.esValue}</td>
-                    <td className="py-2 pr-3">{c.phValue}</td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                          c.decision === "APPROVED"
-                            ? "bg-emerald-400/20 text-emerald-700 border-emerald-400/40"
-                            : "bg-red-400/20 text-red-700 border-red-400/40"
-                        }`}
-                      >
-                        {c.decision === "APPROVED" ? "Approved" : "Rejected"}
-                      </span>
-                    </td>
-                    <td className="py-2">{c.checkedBy}</td>
+          <>
+            {/* Phones: one card per check (no sideways scrolling) */}
+            <div className="md:hidden space-y-3">
+              {checks.map((c) => (
+                <div
+                  key={c.id}
+                  className={`rounded-2xl border bg-white/50 p-3.5 space-y-2.5 border-l-4 ${
+                    c.decision === "APPROVED" ? "border-white/60 border-l-emerald-400" : "border-white/60 border-l-red-400"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-slate-900 break-all">{c.vehicle.vehicleNumber}</p>
+                    <DecisionBadge decision={c.decision} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">ES</p>
+                      <p className="mt-0.5 text-slate-800 font-semibold">{c.esValue}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">PH</p>
+                      <p className="mt-0.5 text-slate-800 font-semibold">{c.phValue}</p>
+                    </div>
+                    <div className="col-span-2 min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Date / Time</p>
+                      <p className="mt-0.5 text-slate-700">{new Date(c.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div className="col-span-2 min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Checked by</p>
+                      <p className="mt-0.5 text-slate-700 break-all">{c.checkedBy}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tablet / desktop: table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead>
+                  <tr className="text-left text-xs text-slate-600 border-b border-white/60">
+                    <th className="py-2 pr-3 font-semibold">Date / Time</th>
+                    <th className="py-2 pr-3 font-semibold">Vehicle</th>
+                    <th className="py-2 pr-3 font-semibold">ES</th>
+                    <th className="py-2 pr-3 font-semibold">PH</th>
+                    <th className="py-2 pr-3 font-semibold">Decision</th>
+                    <th className="py-2 font-semibold">By</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {checks.map((c) => (
+                    <tr key={c.id} className="border-b border-white/40 last:border-0 text-slate-700">
+                      <td className="py-2 pr-3 whitespace-nowrap">{new Date(c.createdAt).toLocaleString()}</td>
+                      <td className="py-2 pr-3 font-semibold">{c.vehicle.vehicleNumber}</td>
+                      <td className="py-2 pr-3">{c.esValue}</td>
+                      <td className="py-2 pr-3">{c.phValue}</td>
+                      <td className="py-2 pr-3">
+                        <DecisionBadge decision={c.decision} />
+                      </td>
+                      <td className="py-2 break-all">{c.checkedBy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
