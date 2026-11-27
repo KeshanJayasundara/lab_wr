@@ -9,6 +9,8 @@ import {
   Loader2,
   ClipboardCheck,
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { evaluateGaliParams, type GaliParam } from "@/lib/galiRanges";
 import GaliReport from "@/components/plant-operator/GaliReport";
@@ -41,6 +43,10 @@ type CheckRow = {
 };
 
 type Notice = { type: "success" | "error"; text: string } | null;
+
+// Recent Gali Checks: 3 checks per page, and the Total / Approved / Rejected buttons filter the list
+const PAGE_SIZE = 3;
+type Filter = "ALL" | "APPROVED" | "REJECTED";
 
 const toNum = (v: string | undefined) => (v === undefined || v.trim() === "" ? NaN : Number(v));
 
@@ -121,6 +127,10 @@ export default function GaliPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [checkNotice, setCheckNotice] = useState<Notice>(null);
+
+  // Recent Gali Checks: which filter button is on, and which page is open
+  const [filter, setFilter] = useState<Filter>("ALL");
+  const [page, setPage] = useState(1);
 
   const loadVehicles = useCallback(async () => {
     const { res, json } = await getJson("/api/plant-operator/gali/vehicles");
@@ -233,6 +243,7 @@ export default function GaliPage() {
         text: decision === "APPROVED" ? `${plate} approved.` : `${plate} rejected.`,
       });
       setValues({});
+      setPage(1);
       await loadChecks();
     } catch (err: any) {
       setCheckNotice({ type: "error", text: err.message });
@@ -259,6 +270,31 @@ export default function GaliPage() {
 
   const approvedCount = checks.filter((c) => c.decision === "APPROVED").length;
   const rejectedCount = checks.length - approvedCount;
+
+  // Filter buttons (Total / Approved / Rejected) -> pages of 3
+  const filtered = useMemo(() => (filter === "ALL" ? checks : checks.filter((c) => c.decision === filter)), [checks, filter]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount); // stays valid when the list shrinks after a refresh
+  const start = (safePage - 1) * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+  // Page numbers to show: first, last and the ones around the current page (-1 = "...")
+  const pageNumbers = useMemo(() => {
+    if (pageCount <= 5) return Array.from({ length: pageCount }, (_, i) => i + 1);
+    const nums = Array.from(new Set([1, pageCount, safePage - 1, safePage, safePage + 1]))
+      .filter((n) => n >= 1 && n <= pageCount)
+      .sort((a, b) => a - b);
+    const out: number[] = [];
+    nums.forEach((n, i) => {
+      if (i > 0 && n - nums[i - 1] > 1) out.push(-1);
+      out.push(n);
+    });
+    return out;
+  }, [pageCount, safePage]);
+  const filterChips: { key: Filter; label: string; count: number; on: string; off: string }[] = [
+    { key: "ALL", label: "Total", count: checks.length, on: "bg-slate-800 text-white border-slate-800", off: "bg-white/70 text-slate-700 border-white/70 hover:bg-white" },
+    { key: "APPROVED", label: "Approved", count: approvedCount, on: "bg-emerald-600 text-white border-emerald-600", off: "bg-emerald-400/20 text-emerald-700 border-emerald-400/40 hover:bg-emerald-400/30" },
+    { key: "REJECTED", label: "Rejected", count: rejectedCount, on: "bg-red-600 text-white border-red-600", off: "bg-red-400/20 text-red-700 border-red-400/40 hover:bg-red-400/30" },
+  ];
 
   const renderNotice = (notice: Notice) =>
     notice ? (
@@ -463,16 +499,23 @@ export default function GaliPage() {
             <p className="text-xs text-slate-600">Showing this month&apos;s checks only. Newest first.</p>
           </div>
           {!loading && checks.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-white/70 border border-white/70 text-slate-700">
-                Total: {checks.length}
-              </span>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-400/20 border border-emerald-400/40 text-emerald-700">
-                Approved: {approvedCount}
-              </span>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-400/20 border border-red-400/40 text-red-700">
-                Rejected: {rejectedCount}
-              </span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter the checks">
+              {filterChips.map((ch) => (
+                <button
+                  key={ch.key}
+                  type="button"
+                  aria-pressed={filter === ch.key}
+                  onClick={() => {
+                    setFilter(ch.key);
+                    setPage(1);
+                  }}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold border cursor-pointer transition-all active:scale-[0.97] ${
+                    filter === ch.key ? `${ch.on} shadow-md` : ch.off
+                  }`}
+                >
+                  {ch.label}: {ch.count}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -481,11 +524,13 @@ export default function GaliPage() {
           <div className="h-16 rounded bg-white/50 animate-pulse" />
         ) : checks.length === 0 ? (
           <p className="text-sm text-slate-500">No checks recorded this month.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-slate-500">No {filter === "APPROVED" ? "approved" : "rejected"} checks this month.</p>
         ) : (
           <>
             {/* Phones: one card per check (no sideways scrolling) */}
             <div className="md:hidden space-y-3">
-              {checks.map((c) => {
+              {paged.map((c) => {
                 const byKey = new Map(readingsOf(c).map((r) => [keyOf(r.name), r]));
                 return (
                   <div
@@ -530,7 +575,7 @@ export default function GaliPage() {
 
             {/* Tablet / desktop: table - one column per parameter */}
             <div className="hidden md:block rounded-2xl border border-white/60 overflow-hidden">
-              <div className="overflow-auto max-h-[32rem]">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ minWidth: 520 + columns.length * 90 }}>
                   <thead>
                     <tr className="text-[11px] uppercase tracking-wide text-slate-600">
@@ -549,11 +594,11 @@ export default function GaliPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {checks.map((c, i) => {
+                    {paged.map((c, i) => {
                       const byKey = new Map(readingsOf(c).map((r) => [keyOf(r.name), r]));
                       return (
                         <tr key={c.id} className="border-t border-white/50 odd:bg-white/30 hover:bg-white/60 transition-colors text-slate-700">
-                          <td className="py-2.5 pl-4 pr-2 text-xs text-slate-500">{i + 1}</td>
+                          <td className="py-2.5 pl-4 pr-2 text-xs text-slate-500">{start + i + 1}</td>
                           <td className="py-2.5 px-3 whitespace-nowrap">{fmtDate(c.createdAt)}</td>
                           <td className="py-2.5 px-3 whitespace-nowrap">{fmtTime(c.createdAt)}</td>
                           <td className="py-2.5 px-3 font-semibold text-slate-900 whitespace-nowrap">{c.vehicle.vehicleNumber}</td>
@@ -576,6 +621,56 @@ export default function GaliPage() {
             <p className="hidden md:block text-[11px] text-slate-500 mt-2">
               Values in <span className="text-red-600 font-semibold">red</span> were outside the allowed range when the check was saved.
             </p>
+
+            {/* Pagination: 3 checks per page */}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-600">
+                Showing {start + 1}-{Math.min(start + PAGE_SIZE, filtered.length)} of {filtered.length}
+              </p>
+              {pageCount > 1 && (
+                <nav aria-label="Pagination" className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPage(safePage - 1)}
+                    disabled={safePage === 1}
+                    aria-label="Previous page"
+                    className="w-9 h-9 rounded-xl border border-white/70 bg-white/70 text-slate-700 flex items-center justify-center transition-all hover:bg-white active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/70 disabled:active:scale-100"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  {pageNumbers.map((n, i) =>
+                    n === -1 ? (
+                      <span key={`gap-${i}`} className="px-1 text-slate-500">
+                        &hellip;
+                      </span>
+                    ) : (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setPage(n)}
+                        aria-current={n === safePage ? "page" : undefined}
+                        className={`min-w-9 h-9 px-2 rounded-xl border text-sm font-semibold transition-all active:scale-95 cursor-pointer ${
+                          n === safePage
+                            ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/30"
+                            : "bg-white/70 text-slate-700 border-white/70 hover:bg-white"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    )
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPage(safePage + 1)}
+                    disabled={safePage === pageCount}
+                    aria-label="Next page"
+                    className="w-9 h-9 rounded-xl border border-white/70 bg-white/70 text-slate-700 flex items-center justify-center transition-all hover:bg-white active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/70 disabled:active:scale-100"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </nav>
+              )}
+            </div>
           </>
         )}
       </section>

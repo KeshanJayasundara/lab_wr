@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Truck, Droplets, LogOut, X, Menu } from "lucide-react";
+import { LayoutDashboard, Truck, Droplets, LogOut, X, Menu } from "lucide-react";
 import ProfileModal, { TechnicianProfile } from "@/components/technician/ProfileModal";
 
 export default function PlantOperatorLayout({
@@ -63,6 +63,7 @@ export default function PlantOperatorLayout({
 
   // Plant Operator Navigation Items
   const navItems = [
+    { name: "Dashboard", href: "/dashboard/plant-operator", icon: LayoutDashboard },
     { name: "Gali", href: "/dashboard/plant-operator/gali", icon: Truck },
     { name: "Tank Operator", href: "/dashboard/plant-operator/tank-operator", icon: Droplets },
   ];
@@ -213,7 +214,7 @@ export default function PlantOperatorLayout({
         </header>
 
         {/* Scrollable Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 bg-transparent">
+        <main className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] p-3 sm:p-6 bg-transparent">
           {children}
         </main>
       </div>
