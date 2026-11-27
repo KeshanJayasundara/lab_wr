@@ -188,7 +188,12 @@ export default function TechnicianHistoryPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update record");
 
-      setToast({ message: "Test record updated & status auto-evaluated successfully!", type: "success" });
+      setToast({
+        message: data.unchanged
+          ? "No changes detected. The value is the same as before."
+          : "Test record updated. The manager has been notified of this edit.",
+        type: "success",
+      });
       setEditingRecord(null);
       fetchRecords();
     } catch (err: any) {

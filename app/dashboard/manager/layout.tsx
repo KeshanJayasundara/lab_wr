@@ -20,10 +20,10 @@ import {
   Droplets,
   HardHat,
   X, 
-  Menu, 
-  Bell 
+  Menu 
 } from "lucide-react";
 import ProfileModal, { ManagerProfile } from "@/components/manager/ProfileModal";
+import NotificationBell from "@/components/manager/NotificationBell";
 
 export default function ManagerLayout({
   children,
@@ -220,10 +220,7 @@ export default function ManagerLayout({
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-white/60 rounded-full transition-all cursor-pointer hover:scale-110">
-              <Bell size={20} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-600 rounded-full ring-2 ring-white/70"></span>
-            </div>
+            <NotificationBell />
 
             {/* Profile pill: click to edit name / email / password */}
             <button

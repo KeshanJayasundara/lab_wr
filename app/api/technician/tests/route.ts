@@ -7,6 +7,9 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "nwsdb_lims_super_secret_key_2026"
 );
 
+// Technicians can edit a submitted result only for this long
+const EDIT_WINDOW_MS = 60 * 60 * 1000;
+
 async function verifyTechnician(request: Request) {
   try {
     const cookieHeader = request.headers.get("cookie");
@@ -82,7 +85,8 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT: Technician edits value within 1-hour grace window. Parameter name & unit stay as originally saved.
+// PUT: Technician edits value within the 1-hour grace window. Parameter name & unit stay as originally saved.
+// Every real change also creates a notification for the Manager (bell icon + details pop-up).
 export async function PUT(request: Request) {
   const user = await verifyTechnician(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -95,13 +99,21 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, error: "Record ID and value are required" }, { status: 400 });
     }
 
-    const record = await prisma.testRecord.findUnique({ where: { id } });
+    const record = await prisma.testRecord.findUnique({
+      where: { id },
+      include: { type: { include: { category: true } } },
+    });
     if (!record) {
       return NextResponse.json({ success: false, error: "Test record not found" }, { status: 404 });
     }
 
+    // Once the manager has verified a result it is locked
+    if (record.isVerified) {
+      return NextResponse.json({ success: false, error: "This result is already verified by the manager and cannot be edited." }, { status: 400 });
+    }
+
     const diffMs = Date.now() - new Date(record.createdAt).getTime();
-    if (diffMs > 60 * 60 * 1000) {
+    if (diffMs > EDIT_WINDOW_MS) {
       return NextResponse.json({ success: false, error: "1-hour edit grace window has expired." }, { status: 400 });
     }
 
@@ -110,13 +122,52 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, error: "Value must be a valid number" }, { status: 400 });
     }
 
-    const status = await evaluateFromDb(record.typeId, record.parameter, numValue);
+    // Nothing changed -> no update, no notification
+    if (numValue === record.value) {
+      return NextResponse.json({ success: true, unchanged: true, data: record }, { status: 200 });
+    }
 
-    const updated = await prisma.testRecord.update({
-      where: { id },
-      data: { value: numValue, status },
-      include: { type: { include: { category: true } } },
-    });
+    const newStatus = await evaluateFromDb(record.typeId, record.parameter, numValue);
+    const oldStatus = await evaluateFromDb(record.typeId, record.parameter, record.value);
+
+    // The JWT has no display name, so read it from the database
+    const editor = await prisma.user.findUnique({ where: { id: user.userId }, select: { name: true } });
+    const editedBy = editor?.name || user.email || "Lab Technician";
+
+    const categoryName = record.type?.category?.name ?? "-";
+    const unitName = record.type?.name ?? "-";
+    const now = new Date();
+
+    // Update + notification are saved together (both succeed or both fail)
+    const [updated] = await prisma.$transaction([
+      prisma.testRecord.update({
+        where: { id },
+        data: { value: numValue, status: newStatus },
+        include: { type: { include: { category: true } } },
+      }),
+      prisma.managerNotification.create({
+        data: {
+          type: "TEST_EDITED",
+          title: "Test result edited",
+          message: `${editedBy} changed ${record.parameter} from ${record.value} to ${numValue} ${record.unit} (${unitName}, ${record.sampleId})`,
+          data: {
+            recordId: record.id,
+            sampleId: record.sampleId,
+            categoryName,
+            unitName,
+            parameter: record.parameter,
+            unit: record.unit,
+            oldValue: record.value,
+            newValue: numValue,
+            oldStatus,
+            newStatus,
+            editedBy,
+            submittedAt: record.createdAt.toISOString(),
+            editedAt: now.toISOString(),
+          },
+        },
+      }),
+    ]);
 
     return NextResponse.json({ success: true, data: updated }, { status: 200 });
   } catch (error: any) {

@@ -84,49 +84,5 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT: Update test record within 1-hour grace window with auto status recalculation
-export async function PUT(request: Request) {
-  try {
-    const body = await request.json();
-    const { id, value } = body;
-
-    if (!id || value === undefined) {
-      return NextResponse.json({ success: false, error: "Record ID and value are required" }, { status: 400 });
-    }
-
-    const record = await prisma.testRecord.findUnique({ where: { id } });
-    if (!record) {
-      return NextResponse.json({ success: false, error: "Test record not found" }, { status: 404 });
-    }
-
-    // Check 1-hour grace window
-    const diffMs = Date.now() - new Date(record.createdAt).getTime();
-    if (diffMs > 60 * 60 * 1000) {
-      return NextResponse.json({ success: false, error: "1-hour edit grace window has expired." }, { status: 400 });
-    }
-
-    const numValue = parseFloat(value);
-    if (isNaN(numValue)) {
-      return NextResponse.json({ success: false, error: "Value must be a valid number" }, { status: 400 });
-    }
-
-    let newStatus = record.status;
-    if (record.typeId) {
-      newStatus = await evaluateFromDb(record.typeId, record.parameter, numValue);
-    }
-
-    const updated = await prisma.testRecord.update({
-      where: { id },
-      data: {
-        value: numValue,
-        status: newStatus,
-      },
-      include: { type: { include: { category: true } } },
-    });
-
-    return NextResponse.json({ success: true, data: updated }, { status: 200 });
-  } catch (error: any) {
-    console.error("PUT record error:", error);
-    return NextResponse.json({ success: false, error: error.message || "Failed to update record" }, { status: 500 });
-  }
-}
+// NOTE: there is no PUT here on purpose. Edits must go through PUT /api/technician/tests,
+// which checks the login, the 1-hour window and notifies the Manager.
