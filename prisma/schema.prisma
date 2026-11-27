@@ -348,3 +348,19 @@ model TankReading {
   @@unique([tankId, date, shiftNo])
   @@index([date])
 }
+
+// ---------------------------------------------------------------
+// Notifications shown in the Manager's bell icon
+// (e.g. a technician edited a test result inside the 1-hour edit window)
+// ---------------------------------------------------------------
+model ManagerNotification {
+  id        String   @id @default(uuid())
+  type      String   // TEST_EDITED
+  title     String
+  message   String   // One-line summary shown in the bell list
+  data      Json?    // Full details shown in the pop-up (old/new value, sample, technician ...)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([isRead, createdAt])
+}
